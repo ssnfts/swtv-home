@@ -6,6 +6,7 @@ import app.swtv.home.MainActivity
 import app.swtv.home.core.CatalogRules
 import app.swtv.home.core.LauncherConfig
 import app.swtv.home.core.ModuleTile
+import app.swtv.home.platform.CatalogPicker
 
 class SettingsController(private val activity: MainActivity) {
     private val config get() = activity.config
@@ -77,8 +78,14 @@ class SettingsController(private val activity: MainActivity) {
     }
 
     private fun chooseDockApp(index: Int) {
-        options("Choose dock app", activity.apps.map { it.label }) { selected ->
-            val next = activity.apps[selected].packageName
+        val picker = CatalogPicker(activity.apps) { it.packageName }
+        options("Choose dock app", picker.choices.map { it.label }) { selected ->
+            val candidate = picker.resolve(selected, activity.discovery.apps(config.showPhoneApps))
+            if (candidate == null) {
+                selectionRemoved()
+                return@options
+            }
+            val next = candidate.packageName
             val pins = config.dock.toMutableList()
             val old = pins.getOrNull(index)
             val existing = pins.indexOf(next)
@@ -118,20 +125,45 @@ class SettingsController(private val activity: MainActivity) {
         return false
     }
 
+    private fun selectionRemoved() {
+        activity.notice("Selection unavailable", "This app or input is no longer available. Reopen the picker to choose another.")
+    }
+
     private fun addAppModule() {
-        options("Installed app", activity.apps.map { it.label }) { index ->
-            val app = activity.apps[index]
+        val picker = CatalogPicker(activity.apps) { it.packageName }
+        options("Installed app", picker.choices.map { it.label }) { index ->
+            val app = picker.resolve(index, activity.discovery.apps(config.showPhoneApps))
+            if (app == null) {
+                selectionRemoved()
+                return@options
+            }
             edit("Shortcut label", app.label) { label ->
-                activity.save(config.copy(modules = config.modules + ModuleTile(label, app.packageName, "app")))
+                // The catalog can change again while the label editor is open.
+                val current = picker.resolve(index, activity.discovery.apps(config.showPhoneApps))
+                if (current == null) {
+                    selectionRemoved()
+                    return@edit
+                }
+                activity.save(config.copy(modules = config.modules + ModuleTile(label, current.packageName, "app")))
             }
         }
     }
 
     private fun addInputModule() {
-        options("Discovered input", activity.inputs.map { it.label }) { index ->
-            val input = activity.inputs[index]
+        val picker = CatalogPicker(activity.inputs) { it.id }
+        options("Discovered input", picker.choices.map { it.label }) { index ->
+            val input = picker.resolve(index, activity.discovery.inputs())
+            if (input == null) {
+                selectionRemoved()
+                return@options
+            }
             edit("Shortcut label", input.label) { label ->
-                activity.save(config.copy(modules = config.modules + ModuleTile(label, input.id, "input")))
+                val current = picker.resolve(index, activity.discovery.inputs())
+                if (current == null) {
+                    selectionRemoved()
+                    return@edit
+                }
+                activity.save(config.copy(modules = config.modules + ModuleTile(label, current.id, "input")))
             }
         }
     }
@@ -150,8 +182,14 @@ class SettingsController(private val activity: MainActivity) {
     }
 
     fun iptv() {
-        options("OwnTV · Choose installed app", activity.apps.map { it.label + " · " + it.packageName }) {
-            activity.save(config.copy(iptvPackage = activity.apps[it].packageName))
+        val picker = CatalogPicker(activity.apps) { it.packageName }
+        options("OwnTV · Choose installed app", picker.choices.map { it.label + " · " + it.packageName }) { index ->
+            val app = picker.resolve(index, activity.discovery.apps(config.showPhoneApps))
+            if (app == null) {
+                selectionRemoved()
+                return@options
+            }
+            activity.save(config.copy(iptvPackage = app.packageName))
         }
     }
 

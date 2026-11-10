@@ -13,7 +13,7 @@ class Weather(context: Context) {
     private val prefs = context.getSharedPreferences("weather-cache", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
-    @Volatile private var generation = 0
+    private val requests = WeatherRequests()
     @Volatile private var connection: HttpURLConnection? = null
 
     private fun snapshot(): WeatherCacheState = if (prefs.getInt("schema", 0) != 2) WeatherCacheState() else WeatherCacheState(
@@ -28,42 +28,48 @@ class Weather(context: Context) {
     }
 
     fun refresh(enabled: Boolean, city: String, done: (String) -> Unit) {
-        val token = ++generation
         if (!enabled) {
-            connection?.disconnect()
+            cancel()
             done("Weather off · Enable in Settings")
             return
         }
+        if (requests.activeCity != null && requests.activeCity != city) cancel()
         val state = snapshot()
         val cached = state.displayFor(city)
+        // A periodic check or screen rebuild subscribes to the existing request, preserving its token.
+        if (requests.observe(city, done)) {
+            done(cached?.plus(" · refreshing") ?: "Loading weather…")
+            return
+        }
         val now = System.currentTimeMillis()
         if (!RuntimePolicy.shouldFetch(enabled, city, now, state.attemptFor(city))) {
             done(cached ?: "Weather unavailable · retry after 30 minutes")
             return
         }
+        val ticket = requests.begin(city, done)
         persist(state.beginAttempt(city, now))
         done(cached?.plus(" · refreshing") ?: "Loading weather…")
         executor.execute {
-            val display = try { fetch(city, token) } catch (_: Exception) {
+            val display = try { fetch(city, ticket) } catch (_: Exception) {
                 cached?.plus(" · stale / unavailable") ?: "Weather unavailable · Open-Meteo"
             }
             handler.post {
-                if (token == generation && snapshot().city == city) {
+                if (requests.isCurrent(ticket) && snapshot().city == city) {
                     persist(snapshot().complete(city, display))
-                    done(display)
+                    requests.complete(ticket, display)
                 }
             }
         }
     }
 
-    private fun fetch(city: String, token: Int): String {
-        check(token == generation)
+    private fun fetch(city: String, ticket: WeatherRequests.Ticket): String {
+        check(requests.isCurrent(ticket))
         val query = URLEncoder.encode(city, "UTF-8")
         val geo = get("https://geocoding-api.open-meteo.com/v1/search?count=1&name=$query")
             .optJSONArray("results")?.optJSONObject(0) ?: error("City not found")
         val latitude = geo.getDouble("latitude")
         val longitude = geo.getDouble("longitude")
-        check(token == generation)
+        check(requests.isCurrent(ticket))
         val forecast = get("https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&current=temperature_2m")
         return "${geo.getString("name")} · ${forecast.getJSONObject("current").getDouble("temperature_2m")}°C · Open-Meteo"
     }
@@ -96,7 +102,7 @@ class Weather(context: Context) {
     }
 
     fun cancel() {
-        generation++
+        requests.cancel()
         connection?.disconnect()
     }
 

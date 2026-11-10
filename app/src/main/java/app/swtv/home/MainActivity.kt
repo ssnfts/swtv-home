@@ -306,9 +306,11 @@ class MainActivity : Activity() {
             notice("Inputs unavailable", "No TV inputs were reported by this device.")
             return
         }
+        val picker = CatalogPicker(inputs) { it.id }
         AlertDialog.Builder(this).setTitle("Inputs")
-            .setItems(inputs.map { it.label }.toTypedArray()) { _, index ->
-                if (!discovery.launchInput(inputs[index].id)) notice("Input unavailable")
+            .setItems(picker.choices.map { it.label }.toTypedArray()) { _, index ->
+                val selected = picker.resolve(index, discovery.inputs())
+                if (selected == null || !discovery.launchInput(selected.id)) notice("Input unavailable")
             }.show()
     }
 
