@@ -32,7 +32,7 @@ object HubPolicy {
     fun allowedRequest(extras: Map<String, Any?>): Boolean =
         extras.keys == setOf(HubContract.EXTRA_MAJOR, HubContract.EXTRA_DESTINATION) &&
             compatible(extras[HubContract.EXTRA_MAJOR]) &&
-            extras[HubContract.EXTRA_DESTINATION] == HubContract.HOME
+            (extras[HubContract.EXTRA_DESTINATION] as? String) == HubContract.HOME
 
     fun resolve(installed: Boolean, handlers: List<HubHandler>): HubResolution {
         if (!installed) return HubResolution.Missing

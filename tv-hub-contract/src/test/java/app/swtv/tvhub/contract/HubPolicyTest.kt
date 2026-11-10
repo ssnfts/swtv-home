@@ -19,6 +19,12 @@ class HubPolicyTest {
         assertFalse(HubPolicy.allowedRequest(extras + (HubContract.EXTRA_MAJOR to "1")))
         assertFalse(HubPolicy.allowedRequest(HubRequest(destination = "player").extras()))
         assertFalse(HubPolicy.allowedRequest(HubRequest(major = 2).extras()))
+
+        val nonStringHome = object {
+            override fun equals(other: Any?): Boolean = HubContract.HOME.equals(other)
+            override fun hashCode(): Int = HubContract.HOME.hashCode()
+        }
+        assertFalse(HubPolicy.allowedRequest(extras + (HubContract.EXTRA_DESTINATION to nonStringHome)))
     }
 
     @Test fun absentPackageIsMissing() {
