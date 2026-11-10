@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "theme": "dark",
+  "accent": "violet",
+  "columns": 8,
+  "reducedMotion": true,
+  "showPhoneApps": false,
+  "dock": ["org.beta", "org.alpha"],
+  "hidden": ["org.hidden"],
+  "modules": [
+    {"label": "OwnTV", "target": "tv.own.owntv", "kind": "app"},
+    {"label": "HDMI", "target": "org.input/.Service/HW1", "kind": "input"}
+  ],
+  "wallpaperUri": "content://images/42",
+  "weatherCity": "Sydney",
+  "weatherEnabled": true,
+  "iptvPackage": "org.iptv"
+}

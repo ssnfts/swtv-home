@@ -1,4 +1,4 @@
-param([string[]]$Tasks = @(':app:testDebugUnitTest', ':app:assembleDebug', ':app:lintDebug'))
+param([string[]]$Tasks = @('testDebugUnitTest', 'assembleDebug', 'lintDebug', ':app:assembleDebugAndroidTest'))
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $jdkRoot = Join-Path $taskRoot 'tools\jdk17'

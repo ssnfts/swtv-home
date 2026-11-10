@@ -1,5 +1,6 @@
 package app.swtv.home.platform
 
+import app.swtv.discovery.InputIntents
 import android.content.Intent
 import android.media.tv.TvContract
 import android.net.Uri

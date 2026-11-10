@@ -6,51 +6,41 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
-import android.text.format.DateUtils
-import android.text.TextUtils
-import android.view.View
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import app.swtv.home.core.AppEntry
-import app.swtv.home.core.CatalogRules
-import app.swtv.home.core.LauncherConfig
-import app.swtv.home.platform.*
-import app.swtv.home.ui.HomeUi
-import app.swtv.home.ui.SettingsController
+import app.swtv.discovery.*
+import app.swtv.theme.LauncherConfig
+import app.swtv.theme.Preferences
+import app.swtv.theme.ThemePolicy
+import app.swtv.launcher.runtime.*
+import app.swtv.launcher.ui.LauncherHost
+import app.swtv.launcher.ui.HomeScreen
+import app.swtv.launcher.ui.HomeScreenActions
 import java.time.ZonedDateTime
 
-class MainActivity : Activity() {
-    lateinit var config: LauncherConfig
+class MainActivity : Activity(), LauncherHost {
+    override val activity: Activity get() = this
+    override lateinit var config: LauncherConfig
         private set
     private lateinit var prefs: Preferences
-    val discovery by lazy { Discovery(this) }
-    var apps = emptyList<AppEntry>()
+    override val discovery by lazy { Discovery(this) }
+    override var apps = emptyList<AppEntry>()
         private set
     private var dockApps = emptyList<AppEntry>()
     private var dockCatalogReady = false
-    val dockPackages: List<String> get() = DockPolicy.canonical(
+    override val dockPackages: List<String> get() = DockPolicy.canonical(
         config.dock, if (dockCatalogReady) dockApps.map { it.packageName }.toSet() else null
     )
-    var inputs = emptyList<InputEntry>()
+    override var inputs = emptyList<InputEntry>()
         private set
     private lateinit var weather: Weather
     private lateinit var wallpaper: Wallpaper
     private val icons by lazy { Icons(this) }
-    private var home: HomeUi? = null
+    private var home: HomeScreen? = null
     private var savedFocus: String? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var clock: TextView? = null
-    private var weatherStatus: TextView? = null
     private var foreground = false
     private var packageReceiverRegistered = false
     private var timeReceiverRegistered = false
@@ -60,8 +50,8 @@ class MainActivity : Activity() {
     private val minuteTick = object : Runnable {
         override fun run() {
             if (!foreground) return
-            updateClock()
-            refreshWeather()
+            home?.updateClock()
+            home?.refreshWeather()
             // Align to device wall-clock minutes without continuously rewriting the same clock text.
             handler.postDelayed(this, 60000L - System.currentTimeMillis() % 60000L)
         }
@@ -160,28 +150,21 @@ class MainActivity : Activity() {
         }
     }
 
-    fun save(next: LauncherConfig) {
-        config = prefs.save(next)
+    override fun save(config: LauncherConfig) {
+        this.config = prefs.save(config)
         refresh()
     }
 
     fun refresh() {
         savedFocus = home?.focusedKey() ?: savedFocus
+        home?.detach()
         icons.beginScreen()
         refreshCatalog()
         inputs = discovery.inputs()
-        val ui = HomeUi(this, config)
-        home = ui
-        installSurface(ui)
-        buildStatus(ui)
-        buildToolbar(ui)
-        buildWatchShortcuts(ui)
-        buildModules(ui)
-        buildDock(ui)
-        buildApps(ui)
-        ui.root.addView(ui.text("Hold OK on an app to pin, unpin or hide. Hold OK on a custom module to edit.", 13f))
-        ui.root.addView(ui.text("Inputs: connected/standby passthrough only. For tuner channels, use your TV app.", 13f))
-        ui.finish(savedFocus)
+        val screen = HomeScreen(this, dockApps, icons, wallpaper, weather,
+            HomeScreenActions(about = { about() }, openTvHub = { openTvHub() }))
+        home = screen
+        screen.render(savedFocus)
         handler.removeCallbacks(minuteTick)
         minuteTick.run()
         scheduleThemeBoundary()
@@ -198,178 +181,28 @@ class MainActivity : Activity() {
         if (grid != null) apps = grid
     }
 
-    private fun installSurface(ui: HomeUi) {
-        val frame = FrameLayout(this).apply {
-            clipChildren = false
-            clipToPadding = false
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                if (ui.light) intArrayOf(0xFFF0F6FC.toInt(), 0xFFD9E7F1.toInt())
-                else intArrayOf(0xFF080F22.toInt(), 0xFF1C2948.toInt()))
-        }
-        val scroll = ScrollView(this).apply {
-            clipChildren = false
-            clipToPadding = false
-            addView(ui.root)
-        }
-        frame.addView(scroll)
-        setContentView(frame)
-        wallpaper.load(config.wallpaperUri) { bitmap ->
-            if (home === ui && bitmap != null) frame.background = BitmapDrawable(resources, bitmap)
-        }
-    }
-
-    private fun buildStatus(ui: HomeUi) {
-        clock = ui.text("", 28f).also { ui.root.addView(it) }
-        weatherStatus = ui.text("", 14f).also { ui.root.addView(it) }
-    }
-
-    private fun updateClock() {
-        val flags = DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or
-            DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_YEAR
-        clock?.text = DateUtils.formatDateTime(this, System.currentTimeMillis(), flags)
-    }
-
-    private fun refreshWeather() {
-        val status = weatherStatus ?: return
-        weather.refresh(config.weatherEnabled, config.weatherCity) { status.text = it }
-    }
-
     private fun scheduleThemeBoundary() {
         handler.removeCallbacks(themeBoundary)
         if (foreground && config.theme == "auto") {
-            handler.postDelayed(themeBoundary, RuntimePolicy.nextBoundaryDelay(ZonedDateTime.now()))
+            handler.postDelayed(themeBoundary, ThemePolicy.nextBoundaryDelay(ZonedDateTime.now()))
         }
     }
 
-    private fun buildToolbar(ui: HomeUi) {
-        ui.row(listOf(
-            ui.tile("settings", "Settings", { SettingsController(this).show() }),
-            ui.tile("system", "System Settings", {
-                if (!discovery.launch(Intent(Settings.ACTION_SETTINGS))) notice("System Settings unavailable")
-            }),
-            ui.tile("about", "About", { about() })
-        ))
-    }
-
-    private fun buildWatchShortcuts(ui: HomeUi) {
-        ui.heading("WATCH & CONNECT")
-        ui.row(listOf(
-            ui.tile("owntv", "OwnTV", {
-                if (!discovery.launchPackage(config.iptvPackage)) missingOwnTv()
-            }),
-            ui.tile("tvhub", "TV Hub", {
-                if (!discovery.launchPackage("app.swtv.tvhub")) {
-                    notice("TV Hub unavailable", "Reserved for app.swtv.tvhub. Install this separate app when available.")
-                }
-            }),
-            ui.tile("inputs", "Inputs", { chooseInput() })
-        ))
-    }
-
-    private fun buildModules(ui: HomeUi) {
-        if (config.modules.isEmpty()) return
-        ui.row(config.modules.mapIndexed { index, module ->
-            ui.tile("module:${module.kind}:${module.target}", module.label, {
-                val opened = if (module.kind == "app") discovery.launchPackage(module.target)
-                    else discovery.launchInput(module.target)
-                if (!opened) notice("Module unavailable")
-            }, { SettingsController(this).moduleMenu(index) })
-        })
-    }
-
-    private fun appTile(ui: HomeUi, app: AppEntry, section: String): View =
-        ui.tile("$section:${app.packageName}", app.label, { launch(app) }, { appMenu(app) }).also {
-            styleAppTile(it as Button)
-            icons.bind(it, app.packageName)
-        }
-
-    private fun styleAppTile(button: Button) {
-        button.minHeight = (104 * resources.displayMetrics.density).toInt()
-        button.maxLines = 2
-        button.ellipsize = TextUtils.TruncateAt.END
-    }
-
-    private fun buildDock(ui: HomeUi) {
-        ui.heading("DOCK · Hold OK for pin / hide")
-        val pins = dockPackages
-        ui.row((0..5).map { slot ->
-            val pkg = pins.getOrNull(slot)
-            if (pkg == null) {
-                ui.tile("slot:$slot", "+ Slot ${slot + 1}", { SettingsController(this).dockSlot(slot) })
-                    .also { styleAppTile(it as Button) }
-            } else {
-                val app = dockApps.firstOrNull { it.packageName == pkg }
-                if (app != null) appTile(ui, app, "dock")
-                else ui.tile("dock:$pkg", pkg, {
-                    if (!discovery.launchPackage(pkg)) notice("App unavailable")
-                }, { appMenu(AppEntry(pkg, "", pkg)) }).also { styleAppTile(it as Button) }
-            }
-        })
-    }
-
-    private fun buildApps(ui: HomeUi) {
-        ui.heading("Apps")
-        val visible = CatalogRules.visible(apps, config.hidden)
-        if (visible.isEmpty()) {
-            ui.root.addView(ui.text("No visible apps · Use Settings to show phone apps or unhide apps"))
-        }
-        visible.chunked(config.columns).forEach { row ->
-            ui.row(row.map { appTile(ui, it, "app") })
-        }
-    }
-
-    private fun launch(app: AppEntry) {
-        if (!discovery.launchApp(app)) {
-            notice("App unavailable", app.label + " could not be opened. Refresh or choose another app.")
-        }
-    }
-
-    fun appMenu(app: AppEntry) {
-        val pins = dockPackages
-        val pinned = app.packageName in pins
-        AlertDialog.Builder(this).setTitle(app.label)
-            .setItems(arrayOf(if (pinned) "Unpin from dock" else "Pin to dock", "Hide app")) { _, which ->
-                if (which == 0) {
-                    val next = if (pinned) pins - app.packageName else DockPolicy.pin(pins, app.packageName)
-                    if (next == null) notice("Dock full", "All six slots are occupied. Open Settings → Dock slots & order to choose a slot to replace or swap.")
-                    else save(config.copy(dock = next))
-                } else save(config.copy(hidden = config.hidden + app.packageName, dock = pins - app.packageName))
-            }.show()
-    }
-
-    fun chooseInput() {
-        if (inputs.isEmpty()) {
-            notice("Inputs unavailable", "No connected or standby passthrough inputs are available. Tuner inputs are unsupported here; use your TV app for tuner channels.")
-            return
-        }
-        val picker = CatalogPicker(inputs) { it.id }
-        AlertDialog.Builder(this).setTitle("Inputs")
-            .setItems(picker.choices.map { it.label }.toTypedArray()) { _, index ->
-                val selected = picker.resolve(index, discovery.inputs())
-                if (selected == null || !discovery.launchInput(selected.id)) notice("Input unavailable")
-            }.show()
-    }
-
-    fun missingOwnTv() {
-        AlertDialog.Builder(this).setTitle("OwnTV unavailable")
-            .setMessage("${config.iptvPackage} is not installed or cannot launch. Open the project releases in your browser or choose an installed fork. No APK is downloaded automatically.")
-            .setPositiveButton("Project releases") { _, _ ->
-                if (!discovery.launch(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Thedurancode/owntv/releases")))) {
-                    notice("No browser available")
-                }
-            }.setNeutralButton("Choose installed app") { _, _ -> SettingsController(this).iptv() }
-            .setNegativeButton("Cancel", null).show()
-    }
-
-    fun notice(title: String, message: String = title) {
+    override fun notice(title: String, message: String) {
         AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).show()
     }
 
-    private fun about() {
-        notice("SWTV Home · 0.1.0", "Original native TV launcher. OwnTV is a separate application. Weather: Open-Meteo, enabled only by you. Update release feed is not configured until Phase 4.")
+    private fun openTvHub() {
+        if (!discovery.launchPackage("app.swtv.tvhub")) {
+            notice("TV Hub unavailable", "Reserved for app.swtv.tvhub. Install this separate app when available.")
+        }
     }
 
-    fun pickWallpaper() {
+    private fun about() {
+        notice("SWTV Home · ${BuildConfig.VERSION_NAME}", "Original native TV launcher. OwnTV is a separate application. Weather: Open-Meteo, enabled only by you. Update release feed is not configured until Phase 4.")
+    }
+
+    override fun pickWallpaper() {
         try {
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE).setType("image/*")
