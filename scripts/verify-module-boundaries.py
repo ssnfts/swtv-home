@@ -38,6 +38,16 @@ def verify(root: Path) -> list[str]:
     unexpected = included - set(EXPECTED)
     if unexpected:
         errors.append("Unexpected modules: " + ", ".join(sorted(unexpected)))
+    app_entries = []
+    for name in sorted(included):
+        for source in sorted((root / name / "src/main").rglob("*.kt")):
+            text = source.read_text(encoding="utf-8-sig")
+            package = re.search(r"^\s*package\s+([\w.]+)", text, re.M)
+            for _ in re.finditer(r"\b(?:class|interface|object|typealias)\s+AppEntry\b", text):
+                app_entries.append((name, package[1] if package else "", source.relative_to(root)))
+    if [(module, package) for module, package, _ in app_entries] != [("app-discovery", "app.swtv.discovery")]:
+        declarations = ", ".join(str(path) for _, _, path in app_entries) or "none"
+        errors.append("AppEntry must be declared exactly once, in app-discovery/package app.swtv.discovery; found: " + declarations)
     graph = {}
     for name in sorted(included):
         module = root / name

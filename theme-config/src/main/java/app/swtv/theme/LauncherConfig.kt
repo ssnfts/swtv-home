@@ -1,6 +1,5 @@
 package app.swtv.theme
 
-data class AppEntry(val packageName: String, val className: String, val label: String)
 data class ModuleTile(val label: String, val target: String, val kind: String)
 data class LauncherConfig(
     val theme: String = "auto", val accent: String = "cyan", val columns: Int = 6,
