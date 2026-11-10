@@ -30,7 +30,7 @@ The delivery script inspects package/version/API, permits only `android.permissi
 
 ## Limits and deferred work
 
-The software emulator sample recorded 94 janky frames out of 104, with a median frame time of 31 ms. One cold start took 2,515 ms, and the post-smoke process used 30,760 KiB PSS. Physical 32-bit ARM installation, cold start, frame pacing, memory pressure, full remote navigation, wallpaper providers and HDMI/CEC switching remain later acceptance work.
+The final software emulator sample recorded 91 janky frames out of 103, with a median frame time of 26 ms. One cold start took 1,976 ms, and the post-smoke process used 29,945 KiB PSS. Physical 32-bit ARM installation, cold start, frame pacing, memory pressure, full remote navigation, wallpaper providers and HDMI/CEC switching remain later acceptance work.
 
 The Phase2 minor wallpaper limitation remains: a failed decode is cached for that URI until selecting a different wallpaper or recreating the Activity. Live weather/offline behavior and an installed OwnTV application were not exercised. Diagnostics report filesystem availability, not total physical storage/chipset identity; unsupported values remain unavailable.
 
