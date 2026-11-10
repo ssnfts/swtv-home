@@ -1,6 +1,6 @@
 # SWTV Custom Home — Phase 2 design proposal
 
-Date: 10 November 2026. Status: proposed implementation design; Phase 2 scope is authorized.
+Date: 10 November 2026. Status: approved by the user, with a dedicated configurable OwnTV shortcut added alongside HDMI shortcuts.
 
 ## Scope and deliverables
 
@@ -34,7 +34,7 @@ Themes include dark, light and automatic time-based mode, accent selection, redu
 
 Enumerate TV inputs using TvInputManager. Passthrough shortcuts use the platform TV channel URI and channel MIME type discovered in Phase 1. Gate unavailable inputs and show a clear fallback when an activity cannot be resolved. This is implementation support only; real HDMI switching needs later TV validation.
 
-Custom module tiles contain a user label and a selected installed app or TV input. A permanent TV Hub entry launches `app.swtv.tvhub` only when installed; otherwise it explains that TV Hub is reserved for future development. No M3U, XMLTV, playback or streaming code is included.
+Custom module tiles contain a user label and a selected installed app or TV input. A dedicated OwnTV shortcut targets `tv.own.owntv` by default; its absent-app dialog offers an explicit link to `https://github.com/Thedurancode/owntv/releases` and selection of another installed app. This entry is independent from a permanent TV Hub entry, which launches `app.swtv.tvhub` only when installed; otherwise it explains that TV Hub is reserved for future development. No M3U, XMLTV, playback or streaming code is included. No external IPTV APK is installed during this phase.
 
 ## Settings and updates
 
