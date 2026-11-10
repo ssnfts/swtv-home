@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateUtils
+import android.text.TextUtils
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
@@ -35,6 +36,11 @@ class MainActivity : Activity() {
     val discovery by lazy { Discovery(this) }
     var apps = emptyList<AppEntry>()
         private set
+    private var dockApps = emptyList<AppEntry>()
+    private var dockCatalogReady = false
+    val dockPackages: List<String> get() = DockPolicy.canonical(
+        config.dock, if (dockCatalogReady) dockApps.map { it.packageName }.toSet() else null
+    )
     var inputs = emptyList<InputEntry>()
         private set
     private lateinit var weather: Weather
@@ -100,6 +106,7 @@ class MainActivity : Activity() {
         unregisterForegroundReceivers()
         icons.beginScreen()
         weather.cancel()
+        wallpaper.cancelPending()
         super.onPause()
     }
 
@@ -161,7 +168,7 @@ class MainActivity : Activity() {
     fun refresh() {
         savedFocus = home?.focusedKey() ?: savedFocus
         icons.beginScreen()
-        apps = discovery.apps(config.showPhoneApps)
+        refreshCatalog()
         inputs = discovery.inputs()
         val ui = HomeUi(this, config)
         home = ui
@@ -173,10 +180,22 @@ class MainActivity : Activity() {
         buildDock(ui)
         buildApps(ui)
         ui.root.addView(ui.text("Hold OK on an app to pin, unpin or hide. Hold OK on a custom module to edit.", 13f))
+        ui.root.addView(ui.text("Inputs: connected/standby passthrough only. For tuner channels, use your TV app.", 13f))
         ui.finish(savedFocus)
         handler.removeCallbacks(minuteTick)
         minuteTick.run()
         scheduleThemeBoundary()
+    }
+
+    private fun refreshCatalog() {
+        val snapshot = discovery.appSnapshot(true) ?: return
+        dockApps = snapshot
+        dockCatalogReady = true
+        // Read-only refresh never rewrites pins: updates can temporarily remove an app.
+        // Every dock edit commits the same effective sequence used to draw these slots.
+        // The phone-app setting filters the grid only: existing phone-app pins remain usable.
+        val grid = if (config.showPhoneApps) snapshot else discovery.appSnapshot(false)
+        if (grid != null) apps = grid
     }
 
     private fun installSurface(ui: HomeUi) {
@@ -260,15 +279,31 @@ class MainActivity : Activity() {
 
     private fun appTile(ui: HomeUi, app: AppEntry, section: String): View =
         ui.tile("$section:${app.packageName}", app.label, { launch(app) }, { appMenu(app) }).also {
-            icons.bind(it as Button, app.packageName)
+            styleAppTile(it as Button)
+            icons.bind(it, app.packageName)
         }
+
+    private fun styleAppTile(button: Button) {
+        button.minHeight = (104 * resources.displayMetrics.density).toInt()
+        button.maxLines = 2
+        button.ellipsize = TextUtils.TruncateAt.END
+    }
 
     private fun buildDock(ui: HomeUi) {
         ui.heading("DOCK · Hold OK for pin / hide")
-        val pins = CatalogRules.dock(apps, config.dock)
+        val pins = dockPackages
         ui.row((0..5).map { slot ->
-            pins.getOrNull(slot)?.let { appTile(ui, it, "dock") }
-                ?: ui.tile("slot:$slot", "+ Slot ${slot + 1}", { SettingsController(this).dockSlot(slot) })
+            val pkg = pins.getOrNull(slot)
+            if (pkg == null) {
+                ui.tile("slot:$slot", "+ Slot ${slot + 1}", { SettingsController(this).dockSlot(slot) })
+                    .also { styleAppTile(it as Button) }
+            } else {
+                val app = dockApps.firstOrNull { it.packageName == pkg }
+                if (app != null) appTile(ui, app, "dock")
+                else ui.tile("dock:$pkg", pkg, {
+                    if (!discovery.launchPackage(pkg)) notice("App unavailable")
+                }, { appMenu(AppEntry(pkg, "", pkg)) }).also { styleAppTile(it as Button) }
+            }
         })
     }
 
@@ -290,20 +325,21 @@ class MainActivity : Activity() {
     }
 
     fun appMenu(app: AppEntry) {
-        val pinned = app.packageName in config.dock
+        val pins = dockPackages
+        val pinned = app.packageName in pins
         AlertDialog.Builder(this).setTitle(app.label)
             .setItems(arrayOf(if (pinned) "Unpin from dock" else "Pin to dock", "Hide app")) { _, which ->
                 if (which == 0) {
-                    val next = if (pinned) config.dock - app.packageName
-                        else CatalogRules.movePin(config.dock, app.packageName, config.dock.size)
-                    save(config.copy(dock = next))
-                } else save(config.copy(hidden = config.hidden + app.packageName, dock = config.dock - app.packageName))
+                    val next = if (pinned) pins - app.packageName else DockPolicy.pin(pins, app.packageName)
+                    if (next == null) notice("Dock full", "All six slots are occupied. Open Settings → Dock slots & order to choose a slot to replace or swap.")
+                    else save(config.copy(dock = next))
+                } else save(config.copy(hidden = config.hidden + app.packageName, dock = pins - app.packageName))
             }.show()
     }
 
     fun chooseInput() {
         if (inputs.isEmpty()) {
-            notice("Inputs unavailable", "No TV inputs were reported by this device.")
+            notice("Inputs unavailable", "No connected or standby passthrough inputs are available. Tuner inputs are unsupported here; use your TV app for tuner channels.")
             return
         }
         val picker = CatalogPicker(inputs) { it.id }

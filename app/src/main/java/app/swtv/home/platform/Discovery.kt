@@ -8,10 +8,14 @@ import android.media.tv.TvInputManager
 import app.swtv.home.core.AppEntry
 import app.swtv.home.core.CatalogRules
 
-data class InputEntry(val id: String, val label: String)
+data class InputEntry(val id: String, val label: String, val passthrough: Boolean, val state: Int)
 
 class Discovery(private val context: Context) {
-    fun apps(phone: Boolean): List<AppEntry> {
+    fun apps(phone: Boolean): List<AppEntry> = appSnapshot(phone) ?: emptyList()
+
+    fun appSnapshot(phone: Boolean): List<AppEntry>? = try { queryApps(phone) } catch (_: Exception) { null }
+
+    private fun queryApps(phone: Boolean): List<AppEntry> {
         val categories = listOf(Intent.CATEGORY_LEANBACK_LAUNCHER) +
             if (phone) listOf(Intent.CATEGORY_LAUNCHER) else emptyList()
         return CatalogRules.deduplicate(categories.flatMap { category ->
@@ -26,7 +30,9 @@ class Discovery(private val context: Context) {
 
     fun inputs(): List<InputEntry> = try {
         val manager = context.getSystemService(Context.TV_INPUT_SERVICE) as TvInputManager
-        manager.tvInputList.map { InputEntry(it.id, it.loadLabel(context).toString()) }
+        manager.tvInputList.map {
+            InputEntry(it.id, it.loadLabel(context).toString(), it.isPassthroughInput, manager.getInputState(it.id))
+        }.filter { InputPolicy.available(it.passthrough, it.state) }
     } catch (_: Exception) {
         emptyList()
     }
@@ -44,9 +50,11 @@ class Discovery(private val context: Context) {
         return launch(intent)
     }
 
-    fun launchInput(id: String): Boolean = launch(
-        Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(id))
-    )
+    fun launchInput(id: String): Boolean {
+        // Saved modules are revalidated on every launch; tuner/missing/disconnected IDs never hand off.
+        if (inputs().none { it.id == id }) return false
+        return launch(InputIntents.passthrough(id))
+    }
 
     fun launch(intent: Intent): Boolean = try {
         context.startActivity(intent)

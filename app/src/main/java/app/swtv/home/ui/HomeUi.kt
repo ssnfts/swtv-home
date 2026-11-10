@@ -81,6 +81,7 @@ class HomeUi(private val activity: Activity, val config: LauncherConfig) {
     fun row(views: List<View>) {
         val line = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
             clipChildren = false
             clipToPadding = false
             // Room for the 1.04 focus scale, even at the first/last tile and toolbar edge.

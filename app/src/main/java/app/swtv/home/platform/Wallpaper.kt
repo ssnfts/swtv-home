@@ -6,27 +6,14 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 
 class Wallpaper(private val context: Context) {
-    private val executor = Executors.newSingleThreadExecutor()
-    private var generation = 0
-    private var bitmap: Bitmap? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val resources = LatestResource<Bitmap>(::decode, Executor { handler.post(it) }, { it.recycle() })
 
-    fun load(uri: String, done: (Bitmap?) -> Unit) {
-        val token = ++generation
-        executor.execute {
-            val result = try { decode(uri) } catch (_: Exception) { null }
-            Handler(Looper.getMainLooper()).post {
-                if (token == generation) {
-                    bitmap = result
-                    done(result)
-                } else result?.recycle()
-            }
-        }
-    }
-
-
+    fun load(uri: String, done: (Bitmap?) -> Unit) = resources.request(uri, done)
+    fun cancelPending() = resources.cancelPending()
 
     private fun decode(uri: String): Bitmap? {
         if (uri.isBlank()) return null
@@ -45,9 +32,5 @@ class Wallpaper(private val context: Context) {
         }
     }
 
-    fun close() {
-        generation++
-        executor.shutdownNow()
-        bitmap = null
-    }
+    fun close() = resources.close()
 }

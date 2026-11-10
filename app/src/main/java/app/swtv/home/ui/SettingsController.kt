@@ -7,6 +7,7 @@ import app.swtv.home.core.CatalogRules
 import app.swtv.home.core.LauncherConfig
 import app.swtv.home.core.ModuleTile
 import app.swtv.home.platform.CatalogPicker
+import app.swtv.home.platform.DockPolicy
 
 class SettingsController(private val activity: MainActivity) {
     private val config get() = activity.config
@@ -17,7 +18,7 @@ class SettingsController(private val activity: MainActivity) {
         options("Settings", listOf(
             "Dock slots & order", "Grid columns: ${config.columns}", "Theme: ${config.theme}",
             "Accent: ${config.accent}", "Reduced motion: ${config.reducedMotion}",
-            "Phone apps: ${config.showPhoneApps}", "Unhide apps", "Custom modules",
+            "Phone apps in grid: ${config.showPhoneApps}", "Unhide apps", "Custom modules",
             "Wallpaper", "Weather", "OwnTV target", "Reset configuration"
         )) { choice ->
             when (choice) {
@@ -64,20 +65,31 @@ class SettingsController(private val activity: MainActivity) {
     }
 
     fun dockSlot(index: Int) {
-        val pkg = config.dock.getOrNull(index)
+        val occupant = activity.dockPackages.getOrNull(index)
         options("Dock slot ${index + 1}", listOf("Choose / swap app", "Move left", "Move right", "Clear slot")) {
+            val pins = activity.dockPackages
+            val currentIndex = if (occupant == null) index else pins.indexOf(occupant)
+            if (currentIndex < 0 || (occupant == null && index < pins.size)) {
+                dockChanged()
+                return@options
+            }
             when (it) {
-                0 -> chooseDockApp(index)
-                1, 2 -> if (pkg != null) {
-                    val next = index + if (it == 1) -1 else 1
-                    activity.save(config.copy(dock = CatalogRules.movePin(config.dock, pkg, next)))
+                0 -> chooseDockApp(currentIndex)
+                1, 2 -> if (occupant != null) {
+                    val next = currentIndex + if (it == 1) -1 else 1
+                    activity.save(config.copy(dock = CatalogRules.movePin(pins, occupant, next)))
                 }
-                3 -> if (pkg != null) activity.save(config.copy(dock = config.dock - pkg))
+                3 -> if (occupant != null) activity.save(config.copy(dock = pins - occupant))
             }
         }
     }
 
+    private fun dockChanged() {
+        activity.notice("Dock changed", "The selected slot changed while the dialog was open. Reopen dock settings to choose a current slot.")
+    }
+
     private fun chooseDockApp(index: Int) {
+        val occupant = activity.dockPackages.getOrNull(index)
         val picker = CatalogPicker(activity.apps) { it.packageName }
         options("Choose dock app", picker.choices.map { it.label }) { selected ->
             val candidate = picker.resolve(selected, activity.discovery.apps(config.showPhoneApps))
@@ -85,18 +97,13 @@ class SettingsController(private val activity: MainActivity) {
                 selectionRemoved()
                 return@options
             }
-            val next = candidate.packageName
-            val pins = config.dock.toMutableList()
-            val old = pins.getOrNull(index)
-            val existing = pins.indexOf(next)
-            if (existing >= 0 && old != null) {
-                pins[existing] = old
-                pins[index] = next
-            } else {
-                pins.remove(next)
-                pins.add(index.coerceAtMost(pins.size), next)
+            val pins = activity.dockPackages
+            val currentIndex = if (occupant == null) index else pins.indexOf(occupant)
+            if (currentIndex < 0 || (occupant == null && index < pins.size)) {
+                dockChanged()
+                return@options
             }
-            activity.save(config.copy(dock = pins.take(6)))
+            activity.save(config.copy(dock = DockPolicy.assign(pins, currentIndex, candidate.packageName)))
         }
     }
 
