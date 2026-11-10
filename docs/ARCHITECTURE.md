@@ -9,9 +9,11 @@ Phase2 uses one Android Gradle module, `app`. These package boundaries keep Andr
 | `platform/Discovery` | PackageManager/TV input enumeration and safe explicit launch handoffs |
 | `platform/Preferences` | App-private JSON preference storage through ConfigCodec |
 | `platform/Icons`, `IconWorkPolicy` |48-entry finished cache; one running/48 queued requests; per-generation admission and weak view bindings |
-| `platform/Wallpaper` | User-granted document decoding off main thread, sampled image and gradient fallback |
+| `platform/Wallpaper`, `LatestResource` | Sampled document decoding off main, same-URI cache/coalescing, one running and one latest pending request, pause cancellation |
 | `platform/Weather`, `WeatherRequests`, `WeatherCacheState` | Opt-in HTTPS, per-city data identity, request coalescing/cancellation and bounded cache/attempt policy |
 | `platform/CatalogPicker` | Immutable visible candidates and stable target selection against the refreshed catalog |
+| `platform/DockPolicy` | One effective dock sequence for display and editing; replace/swap/append and stale-pin handling |
+| `platform/InputIntents`, `InputPolicy` | Explicit ACTION_VIEW/data/channel-MIME construction and current passthrough/connected-or-standby eligibility |
 | `platform/RuntimePolicy` | Effects, date-boundary, refresh and URL policies tested on the JVM |
 | `ui/HomeUi`, `SettingsController` | Native surfaces, focus links, remote-friendly settings and chooser dialogs |
 
@@ -19,7 +21,9 @@ App and input discovery occur on foreground refresh; expensive icon, bitmap and 
 
 Preferences belong to `app.swtv.home`. No TV system setting is a persistence backend. Weather defaults off; no location permission or always-running service exists. UI catalog selections retain stable package/input IDs if the live catalog changes while a dialog is open.
 
-The launcher delegates HDMI/input display to the device's TV software through a typed passthrough channel URI. It does not bind vendor privileged APIs or render TV streams itself. Lack of a handler is an ordinary unavailable state.
+The launcher delegates supported passthrough inputs to the device's TV software through an explicit channel MIME and passthrough URI. It revalidates membership and accepts connected/standby inputs, rejecting missing/disconnected/unsupported kinds. Tuner/software sources remain with the stock TV application; no tuner playback or privileged switching is implemented. A started Activity is not proof that actual hardware switching worked.
+
+Stored dock pins survive read-only refresh and transient package-update gaps. A single effective sequence drives the rendered dock and user mutations; explicit edits write that sequence back. The phone-app toggle filters the grid, while already pinned phone apps remain available in the dock. Choosing an unpinned app replaces an occupied slot, an already pinned app swaps positions, and an empty position appends. Full-dock long-OK pinning explains how to choose a replacement slot.
 
 OwnTV is an independent installed application. Its default target `tv.own.owntv` is configurable; a missing-app dialog offers the requested GitHub releases URL only after explicit user selection. There is no embedded player or automatic APK installer.
 

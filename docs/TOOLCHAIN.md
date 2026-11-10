@@ -1,6 +1,6 @@
 # Build toolchain
 
-Pinned project versions: Android Gradle Plugin8.7.3, Kotlin2.0.21, Gradle8.9, Java17, Android compile/target35 and minimum29. Runtime dependencies are limited to Kotlin's standard library and Android platform APIs; unit tests additionally use JUnit4 and a JVM JSON implementation.
+Pinned project versions: Android Gradle Plugin8.7.3, Kotlin2.0.21, Gradle8.9, Java17, Android compile/target35 and minimum29. Runtime dependencies are limited to Kotlin's standard library and Android platform APIs; unit tests additionally use JUnit4 and a JVM JSON implementation. The separate Android test APK uses AndroidX runner1.6.2 and JUnit extension1.2.1; these are not application runtime dependencies.
 
 The local task uses tools under the task root's `tools/` directory. They are not redistributed in the source ZIP. `build-local.ps1` sets process-local JAVA_HOME, ANDROID_HOME and GRADLE_USER_HOME, then invokes the task-local Gradle. No system PATH or persistent environment setting is modified.
 
