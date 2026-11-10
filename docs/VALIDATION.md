@@ -46,6 +46,8 @@ Regression tests ran against compileable prior behavior and failed for the relev
 
 ## Unvalidated or deferred
 
+Known minor limitation from final review: a failed wallpaper decode is cached as an empty result. If the document provider failed transiently, selecting the same URI again can remain on the gradient until another wallpaper URI is selected or the Activity is recreated. This is a fallback/retry limitation, not a demonstrated crash or unbounded-work issue.
+
 - Physical SWTV installation, remote controls/held OK, HDMI/CEC switching and default HOME selection.
 - Running an installed OwnTV APK or streaming; only the shortcut's absent-app path was exercised. No IPTV APK was downloaded or installed.
 - Live weather responses and offline transitions on the physical TV; provider behavior is guarded in code but not established by the UI smoke.
