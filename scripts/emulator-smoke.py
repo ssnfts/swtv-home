@@ -13,6 +13,7 @@ parser.add_argument('--serial', default='emulator-5556')
 parser.add_argument('--apk', required=True)
 parser.add_argument('--out', required=True)
 parser.add_argument('--extended', action='store_true')
+parser.add_argument('--phase3', action='store_true')
 args = parser.parse_args()
 if not re.fullmatch(r'emulator-\d+', args.serial):
     raise SystemExit('Refusing a non-emulator serial')
@@ -73,6 +74,26 @@ for label in ['OwnTV', 'TV Hub', 'Inputs', 'Settings']:
     if label not in text:
         raise AssertionError('Missing home label: ' + label)
 screenshot('home')
+
+if args.phase3:
+    tap(tree, 'About')
+    about = screen('about-updates')
+    about_text = labels(about)
+    if '0.2.0' not in about_text or not re.search(r'not configured|aren.?t configured|unconfigured', about_text, re.I):
+        raise AssertionError('About did not show 0.2.0 and honest unconfigured update state')
+    screenshot('about-updates')
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    tree = screen('before-diagnostics')
+    tap(tree, 'Diagnostics')
+    diagnostic = screen('diagnostics')
+    diagnostic_text = labels(diagnostic)
+    if not re.search(r'\b(?:API|SDK)\s*:?\s*29\b', diagnostic_text):
+        raise AssertionError('Diagnostics did not report actual emulator API29')
+    if not re.search(r'\b(?:RAM|memory)\b', diagnostic_text, re.I):
+        raise AssertionError('Diagnostics did not expose memory information')
+    screenshot('diagnostics')
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    tree = screen('after-diagnostics')
 
 # A directional key must produce an actual focus transition, not merely redraw.
 adb('shell', 'input', 'keyevent', 'KEYCODE_DPAD_RIGHT')
@@ -150,7 +171,7 @@ if args.extended:
         focused = [n for n in app_focus.iter('node') if n.get('focused') == 'true']
         if focused:
             name = focused[0].get('content-desc') or focused[0].get('text', '')
-            if name not in ['Settings', 'System Settings', 'About', 'OwnTV', 'TV Hub', 'Inputs'] and not name.startswith('+ Slot '):
+            if name not in ['Settings', 'System Settings', 'About', 'Diagnostics', 'OwnTV', 'TV Hub', 'Inputs'] and not name.startswith('+ Slot '):
                 break
     else:
         raise AssertionError('D-pad could not reach an app tile')
@@ -177,7 +198,7 @@ log = adb('logcat', '-d', '-t', '400', '-v', 'brief')
 if re.search(r'FATAL EXCEPTION[\s\S]{0,600}Process: app\.swtv\.home', log):
     raise AssertionError('Launcher fatal exception in emulator log')
 (out / 'result.json').write_text(json.dumps({'status':'passed', 'target':args.serial, 'api':29,
-    'checks':['install','startup','home-controls','dpad-focus-transition','owntv-absent-path','hub-reservation','settings-theme-entry','no-observed-fatal-exception'] + (['theme-persistence','grid-columns-persistence','process-recreation','dpad-row-traversal','long-press-app-menu'] if args.extended else []),
+    'checks':['install','startup','home-controls','dpad-focus-transition','owntv-absent-path','hub-reservation','settings-theme-entry','no-observed-fatal-exception'] + (['theme-persistence','grid-columns-persistence','process-recreation','dpad-row-traversal','long-press-app-menu'] if args.extended else []) + (['dynamic-build-identity','unconfigured-update-provider','read-only-diagnostics-api-memory'] if args.phase3 else []),
     'limits':['Targeted taps were used for dialog entry; comprehensive D-pad traversal requires additional testing.',
               'App long-click was tested with a stationary touch hold because API29 shell held-key synthesis did not reproduce a held remote OK.',
               'No physical-TV navigation, HDMI switching or installed-OwnTV playback was tested.']}, indent=2), encoding='utf-8')
