@@ -18,7 +18,17 @@ import app.swtv.launcher.runtime.*
 import app.swtv.launcher.ui.LauncherHost
 import app.swtv.launcher.ui.HomeScreen
 import app.swtv.launcher.ui.HomeScreenActions
+import app.swtv.diagnostics.DeviceDiagnostics
+import app.swtv.diagnostics.DiagnosticReport
+import app.swtv.diagnostics.DiagnosticSnapshot
+import app.swtv.updates.BuildIdentity
+import app.swtv.updates.UnconfiguredUpdateProvider
+import app.swtv.updates.UpdateReport
+import app.swtv.tvhub.contract.AndroidHubGateway
+import app.swtv.tvhub.contract.HubClient
+import app.swtv.tvhub.contract.HubLaunchResult
 import java.time.ZonedDateTime
+import java.util.concurrent.Executor
 
 class MainActivity : Activity(), LauncherHost {
     override val activity: Activity get() = this
@@ -37,6 +47,11 @@ class MainActivity : Activity(), LauncherHost {
         private set
     private lateinit var weather: Weather
     private lateinit var wallpaper: Wallpaper
+    private lateinit var diagnostics: LatestResource<DiagnosticSnapshot>
+    private var diagnosticsDialog: AlertDialog? = null
+    private var diagnosticsRequest = 0L
+    private val updates = UnconfiguredUpdateProvider()
+    private val hub by lazy { HubClient(AndroidHubGateway(applicationContext)) }
     private val icons by lazy { Icons(this) }
     private var home: HomeScreen? = null
     private var savedFocus: String? = null
@@ -77,6 +92,11 @@ class MainActivity : Activity(), LauncherHost {
         config = prefs.load()
         weather = Weather(this)
         wallpaper = Wallpaper(this)
+        val collector = DeviceDiagnostics(applicationContext)
+        val mainHandler = handler
+        // Bounded worker retains the application-context collector, never the Activity.
+        // cancelPending drops the UI subscriber on dismiss/pause; each opening requests a fresh key.
+        diagnostics = LatestResource({ collector.collect() }, Executor { mainHandler.post(it) })
         savedFocus = state?.getString("focus")
     }
 
@@ -97,6 +117,9 @@ class MainActivity : Activity(), LauncherHost {
         icons.beginScreen()
         weather.cancel()
         wallpaper.cancelPending()
+        diagnostics.cancelPending()
+        diagnosticsDialog?.dismiss()
+        diagnosticsDialog = null
         super.onPause()
     }
 
@@ -104,6 +127,7 @@ class MainActivity : Activity(), LauncherHost {
         icons.close()
         wallpaper.close()
         weather.close()
+        diagnostics.close()
         super.onDestroy()
     }
 
@@ -193,13 +217,39 @@ class MainActivity : Activity(), LauncherHost {
     }
 
     private fun openTvHub() {
-        if (!discovery.launchPackage("app.swtv.tvhub")) {
-            notice("TV Hub unavailable", "Reserved for app.swtv.tvhub. Install this separate app when available.")
+        when (hub.open()) {
+            HubLaunchResult.Missing -> notice("TV Hub unavailable", "Reserved for app.swtv.tvhub. Install this separate app when available.")
+            HubLaunchResult.Incompatible -> notice("TV Hub incompatible", "The installed TV Hub does not declare a compatible version. This launcher requires TV Hub contract version 1.")
+            HubLaunchResult.Unavailable -> notice("TV Hub unavailable", "TV Hub cannot be opened. It needs one enabled, exported home handler for contract version 1.")
+            HubLaunchResult.Launched -> Unit
         }
     }
 
     private fun about() {
-        notice("SWTV Home · ${BuildConfig.VERSION_NAME}", "Original native TV launcher. OwnTV is a separate application. Weather: Open-Meteo, enabled only by you. Update release feed is not configured until Phase 4.")
+        val identity = BuildIdentity(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_NAME,
+            BuildConfig.VERSION_CODE.toLong(), BuildConfig.BUILD_TYPE)
+        notice("SWTV Home · ${identity.versionName}", UpdateReport.format(identity, updates.state()) +
+            "\n\nOriginal native TV launcher. OwnTV is a separate application. Weather: Open-Meteo, enabled only by you.")
+    }
+
+    override fun showDiagnostics() {
+        if (!foreground) return
+        diagnosticsDialog?.dismiss()
+        val dialog = AlertDialog.Builder(this).setTitle("Diagnostics")
+            .setMessage("Collecting public system values…").setPositiveButton("OK", null).create()
+        diagnosticsDialog = dialog
+        dialog.setOnDismissListener {
+            if (diagnosticsDialog === dialog) {
+                diagnostics.cancelPending()
+                diagnosticsDialog = null
+            }
+        }
+        dialog.show()
+        diagnostics.request((++diagnosticsRequest).toString()) { snapshot ->
+            if (foreground && diagnosticsDialog === dialog) {
+                dialog.setMessage(snapshot?.let(DiagnosticReport::format) ?: "Diagnostics unavailable.")
+            }
+        }
     }
 
     override fun pickWallpaper() {

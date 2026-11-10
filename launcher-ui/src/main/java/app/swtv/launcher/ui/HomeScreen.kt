@@ -109,7 +109,8 @@ class HomeScreen(
             ui.tile("system", "System Settings", {
                 if (!discovery.launch(Intent(Settings.ACTION_SETTINGS))) notice("System Settings unavailable")
             }),
-            ui.tile("about", "About", { actions.about() })
+            ui.tile("about", "About", { actions.about() }),
+            ui.tile("diagnostics", "Diagnostics", { host.showDiagnostics() })
         ))
     }
 

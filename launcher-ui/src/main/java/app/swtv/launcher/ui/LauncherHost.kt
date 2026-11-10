@@ -17,4 +17,5 @@ interface LauncherHost {
     fun save(config: LauncherConfig)
     fun notice(title: String, message: String = title)
     fun pickWallpaper()
+    fun showDiagnostics()
 }
