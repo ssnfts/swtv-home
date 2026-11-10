@@ -1,73 +1,47 @@
-# Phase 2 validation
+# Phase 3 validation
 
-Tested on 10 November 2026. This is an initial development build, not a production or physical-TV acceptance sign-off.
+Validation ran 10–11 November 2026. Development build `app.swtv.home` is version 0.2.0 (code 2), with minimum API 29 and target/compile SDK 35. Physical TV deployment is a separate phase.
 
-## Build and artifact
+## Evidence and scope
 
-- Application `app.swtv.home`, version0.1.0 / code1; minimum API29, target/compile35.
-- JDK17, Gradle8.9, AGP8.7.3, Kotlin2.0.21; build, unit tests and `lintDebug` completed successfully.
-- 27 JVM tests passed with zero failures/errors: core10, runtime policies4, review regressions4, interaction regressions3, dock/input regressions3 and wallpaper-work regressions3. One additional Android platform test passed on the API29 TV emulator, asserting ACTION_VIEW, the exact encoded HW5 passthrough URI and explicit channel MIME. It first failed against the old untyped intent.
-- Lint: zero errors, six warnings. Warnings cover fixed TV landscape, vector-banner size, API31+ data-extraction configuration recommendation, and lint's inability to inspect the protected-broadcast filter through a helper in the guarded legacy registration path. Two further notices recommend newer versions of the intentionally pinned, test-only AndroidX runner/JUnit libraries. No broad lint baseline or blanket suppression was used.
-- `aapt2` confirmed package, minimum/target SDK and only `android.permission.INTERNET`.
-- No native `.so` libraries are packaged. The APK is DEX/platform-based; a32-bit ARM hardware install remains untested.
-- `apksigner verify --verbose --print-certs` passed; the development APK uses Android's debug certificate and APK Signature Scheme v2. This is not the Phase4 production signing identity.
-- APK bytes:2,558,819. SHA-256: `9593ce55ed7b6f5047a84b97654286e39f0392ed97af4a84c82ccade2a51daf1`.
+Build and test counts, lint issues, APK/signature metadata and the exact source revision are recorded in the adjacent `SWTV-Phase3` handoff folder. `test-summary.json`, `apk-verification.json` and `source-verification.json` are the authoritative artifact records. Build logs, JUnit XML, emulator screenshots/hierarchies and read-only code-review reports accompany them.
 
-Build evidence refers to application code through commit `06224f0`. Later documentation/test-harness commits do not change the APK.
+Six independently compiled Android libraries implement theme configuration, app discovery, reusable launcher UI, read-only diagnostics, unconfigured update state and TV Hub navigation. The architecture guard checks permitted edges/no cycles, library-to-app isolation and unique AppEntry ownership. Every library is assembled to an AAR by the all-module build; the renderer's two library dependencies are explicit. The pinned JDK17/Gradle8.9/AGP8.7.3/Kotlin2.0.21 toolchain is unchanged.
 
-## Emulator checks
+All 47 JVM tests and four API 29 instrumentation tests passed. Lint found zero errors and six existing app warnings: legacy receiver flag analysis, vector rasterization, two test dependency update notices, the fixed landscape orientation and the data extraction configuration recommendation. Library lint reported no issues.
 
-Google Android TV API29 x86 image,1920×1080 at320dpi,1536MiB guest RAM, two virtual CPU cores, existing Windows Hypervisor Platform, software graphics. The harness refuses non-emulator serials and verifies `ro.kernel.qemu=1` before installing or injecting input.
+## Upgrade preservation
 
-Passed checks:
+The guarded upgrade harness first verified `ro.kernel.qemu=1` and API29, then captured the existing0.1.0/code1 app's `home`/`config` JSON, installed0.2.0/code2 using the same package/signer and started the Activity without clearing data. Every saved schema1 value and type matched afterward. Raw before/after XML/JSON and the result are in `upgrade-validation`.
 
-1. Install the debug APK as an ordinary emulator app and explicitly open its activity.
-2. Render the home controls; move actual D-pad focus between controls and down through rows.
-3. Open the absent-OwnTV dialog and verify its project-releases path; keep TV Hub as a separate future-app entry.
-4. Open settings, change theme and grid columns, and verify saved JSON after process recreation.
-5. Open an app's long-click menu and pin an app to the dock.
-6. Observe no launcher fatal exception in the captured emulator log window.
+This actual upgrade used the extracted Task1 build. Subsequent Phase3 builds retain the same code2/package, configuration codec and signer. The legacy fixture test additionally covers all configuration fields, including modules, hidden apps, weather opt-in, wallpaper and the IPTV override. This development update is not evidence for forced downgrades or production rollback.
 
-Targeted taps entered some dialogs. A stationary900ms touch hold exercised the native long-click action: API29's shell `keyevent --longpress` behaved as a short click in this emulator, and emulator-console key injection did not reproduce a held remote OK. **Actual held-OK remote behavior is not validated.** These tests are not comprehensive traversal or accessibility tests.
+## Emulator safety and platform coverage
 
-The emulator HOME resolver remained the stock Leanback launcher in the recorded check; no preferred-HOME command was issued. Physical-TV behavior can differ.
+The workspace-owned emulator is Google Android TV API29 x86,1920×1080/320dpi,1536MiB RAM, two virtual CPU cores, WHPX and software graphics. Test scripts reject non-emulator serial strings before running ADB and verify emulator/API identity before installation or input injection. No unscoped connected-device Gradle task was used. The physical TV was not targeted.
 
-## Performance observations and limits
+Instrumentation inspects actual Android input and TV Hub intents. All 16 extended UI smoke checks passed on the delivered APK. They cover home and D-pad focus, the absent OwnTV and reserved Hub states, settings persistence after process recreation, app context actions, dynamic build identity, unconfigured updates and on-demand diagnostics. Some dialogs use targeted taps. A stationary 900 ms touch hold exercises long-click. Held remote OK still needs a physical TV test.
 
-One final debug cold-start sample reported2437ms; one post-smoke `dumpsys meminfo` snapshot reported37,494KiB total PSS (approximately36.6MiB). These are emulator observations, not physical-TV performance figures.
+The recorded HOME resolver stays `com.google.android.tvlauncher/.MainActivity`. No preferred-HOME or system-setting command was issued. There is no installed TV Hub provider or OwnTV player in this emulator; compatibility policies are unit-tested, not an end-to-end provider/playback acceptance test.
 
-Software-emulator graphics were poor:101 recorded frames,86 janky frames(85.15%),28ms median. Test automation and a software renderer affect these samples, but the result does **not** demonstrate smooth animation or a60fps target. Physical startup, frame pacing and memory-pressure validation remain required in the later device-validation phase. No performance improvement over the stock TV launcher is claimed.
+## Artifact checks
 
-## Review-driven corrections
+The delivery script inspects package/version/API, permits only `android.permission.INTERNET`, rejects packaged JNI libraries and verifies the debug APK signature. The development signer is compared with the preserved0.1.0 APK. Source archive entries and bytes are checked against the clean committed checkout; SDKs, build caches, APKs and keystores are excluded.
 
-The review process corrected foreground package-change refresh, cache identity across city changes/cancellation, bounded/deduplicated icon work with weak generation-safe bindings, local-time automatic theming and scheduled boundaries, focus-border clipping, same-city weather request coalescing across minute checks, and stable picker snapshots across catalog changes. Final review also corrected canonical dock editing after removals, occupied-slot replacement/swap, explicit input MIME, current passthrough membership/state checks and bounded/coalesced wallpaper work.
+## Limits and deferred work
 
-Regression tests ran against compileable prior behavior and failed for the relevant cache/theme/queue and controller-interaction cases before the corrections passed. Task reviews after the corrections returned spec PASS and code-quality APPROVE.
+The software emulator sample recorded 94 janky frames out of 104, with a median frame time of 31 ms. One cold start took 2,515 ms, and the post-smoke process used 30,760 KiB PSS. Physical 32-bit ARM installation, cold start, frame pacing, memory pressure, full remote navigation, wallpaper providers and HDMI/CEC switching remain later acceptance work.
 
-## Unvalidated or deferred
+The Phase2 minor wallpaper limitation remains: a failed decode is cached for that URI until selecting a different wallpaper or recreating the Activity. Live weather/offline behavior and an installed OwnTV application were not exercised. Diagnostics report filesystem availability, not total physical storage/chipset identity; unsupported values remain unavailable.
 
-Known minor limitation from final review: a failed wallpaper decode is cached as an empty result. If the document provider failed transiently, selecting the same URI again can remain on the gradient until another wallpaper URI is selected or the Activity is recreated. This is a fallback/retry limitation, not a demonstrated crash or unbounded-work issue.
-
-- Physical SWTV installation, remote controls/held OK, HDMI/CEC switching and default HOME selection.
-- Running an installed OwnTV APK or streaming; only the shortcut's absent-app path was exercised. No IPTV APK was downloaded or installed.
-- Live weather responses and offline transitions on the physical TV; provider behavior is guarded in code but not established by the UI smoke.
-- Wallpaper selection through this OEM's document provider and memory pressure from user images.
-- Production release signing, hosted update manifest, APK verification/install pipeline and rollback/migration release tests: Phase4.
-- Independent Gradle modules and formal TV Hub integration contract: Phase3. Playback/playlist/EPG functionality is absent.
-
-Network debugging remains enabled from discovery; shutdown is the requested post-deployment action and was not performed during development. The physical TV was not targeted by these emulator tests.
+Production signing, GitHub Actions/release publishing, HTTPS manifests, APK integrity/install flows, release migration/rollback tests and all media/playlist/EPG capabilities remain deferred. The original launcher is retained. Network debugging remains as it was after discovery; its requested shutdown belongs after later approved deployment/recovery validation.
 
 ## Repeat the checks
 
-From the project root, run the documented Gradle build, then:
+Run `build-local.ps1` in the prepared workspace, or the README Gradle command in Android Studio's configured JDK/SDK environment. Run the architecture guard. Build `:app:assembleDebugAndroidTest`, then use `scripts/emulator-instrumentation.py` with explicit app/test APK paths and a verifiedAPI29 emulator serial. Do not use an unscoped `connectedDebugAndroidTest` task while a physical device may be attached.
 
 ```powershell
-python scripts/emulator-smoke.py --adb PATH_TO_ADB --serial emulator-5556 --apk app/build/outputs/apk/debug/app-debug.apk --out PATH_TO_TEST_OUTPUT --extended
+python scripts/emulator-smoke.py --adb PATH_TO_ADB --serial emulator-5556 --apk app/build/outputs/apk/debug/app-debug.apk --out PATH_TO_OUTPUT --extended --phase3
 ```
 
-The emulator must already be an API29 TV image. No physical serial is accepted. Raw logs, screenshots, XML hierarchies, APK metadata/signature and structured results are provided in the separate Phase2 validation output folder.
-
-## Android platform test
-
-The test-only AndroidX runner1.6.2 / JUnit extension1.2.1 are separate from runtime dependencies. Build with `:app:assembleDebugAndroidTest`; run `scripts/emulator-instrumentation.py` with application/test APK paths and an API29 emulator serial. Do not use an unscoped connected-device test task while the physical TV is attached. The guarded script verifies emulator identity before installation.
-
+For upgrade validation, `scripts/emulator-upgrade.py` requires an existing code1 app and real saved config; it refuses another version, downgrade or invented baseline. Do not reset the current code2 emulator to rerun it. Use a separate prepared emulator if repeating that scenario.
