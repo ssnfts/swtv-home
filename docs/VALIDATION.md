@@ -1,47 +1,60 @@
-# Phase 3 validation
+# Phase 4 validation
 
-Validation ran 10–11 November 2026. Development build `app.swtv.home` is version 0.2.0 (code 2), with minimum API 29 and target/compile SDK 35. Physical TV deployment is a separate phase.
+Validated locally on 11 November 2026. Development version 0.3.0/code 3 targets Android API 29 and newer, with compile/target SDK 35. Final application source is commit `a1015dcd1733a29a84f70ff44bac934b42c8e298`. Later documentation and test-harness commits are recorded in the delivered source archive metadata.
 
-## Evidence and scope
+## Build and security checks
 
-Build and test counts, lint issues, APK/signature metadata and the exact source revision are recorded in the adjacent `SWTV-Phase3` handoff folder. `test-summary.json`, `apk-verification.json` and `source-verification.json` are the authoritative artifact records. Build logs, JUnit XML, emulator screenshots/hierarchies and read-only code-review reports accompany them.
+- All 78 JVM tests passed, with zero failures, errors or skips. Four Python release-tool tests passed. The six libraries retain their approved dependency graph and compile as Android AARs.
+- Debug and release assembly, app instrumentation assembly and lint completed successfully. App lint reported zero errors, 14 debug warnings and 12 release warnings. These cover inherited receiver/vector/dependency/platform notices and English UI string formatting. Detailed per-module XML is in the delivery evidence.
+- The delivered debug APK is `app.swtv.home`, version 0.3.0/code 3, min API 29, target SDK 35, with only INTERNET permission and no native libraries. Its development signer matches the preserved 0.2.0 build. Release-only metadata, install permission and private result receiver were inspected from the actual release APK.
+- The source ZIP is checked file by file against the clean committed project. Keystores, passwords, test APK fixtures, SDKs and build caches are excluded. The disposable emulator signing identity stays in private scratch storage and is distinct from a production identity.
 
-Six independently compiled Android libraries implement theme configuration, app discovery, reusable launcher UI, read-only diagnostics, unconfigured update state and TV Hub navigation. The architecture guard checks permitted edges/no cycles, library-to-app isolation and unique AppEntry ownership. Every library is assembled to an AAR by the all-module build; the renderer's two library dependencies are explicit. The pinned JDK17/Gradle8.9/AGP8.7.3/Kotlin2.0.21 toolchain is unchanged.
+The network client passed real loopback TLS regressions. A blocked response-header request hit its two-second test deadline in 2.014 seconds. A blocked download cancelled and removed its partial file in the 0.047-second test. A Basic authentication challenge triggered one request, no JVM authenticator and no ambient cookie or authorization header. A 503 Retry-After response triggered one request. Production policy retains one 120-second budget, checked origins, manual redirects and bounded streamed content.
 
-All 47 JVM tests and four API 29 instrumentation tests passed. Lint found zero errors and six existing app warnings: legacy receiver flag analysis, vector rasterization, two test dependency update notices, the fixed landscape orientation and the data extraction configuration recommendation. Library lint reported no issues.
+## Debug upgrade and launcher behavior
 
-## Upgrade preservation
+A dedicated Google Android TV API 29 x86 emulator preserved its app settings across a normal 0.2.0/code 2 to 0.3.0/code 3 debug upgrade. That transition used the initial reviewed Phase 4 build. The later Android 10 archive compatibility fix changed only archive certificate collection and added an opt-in test. Installing the final code-3 debug APK over the earlier code-3 build also retained the existing preferences.
 
-The guarded upgrade harness first verified `ro.kernel.qemu=1` and API29, then captured the existing0.1.0/code1 app's `home`/`config` JSON, installed0.2.0/code2 using the same package/signer and started the Activity without clearing data. Every saved schema1 value and type matched afterward. Raw before/after XML/JSON and the result are in `upgrade-validation`.
+On the final debug APK, all four existing Android intent tests passed. Four opted-in fixture methods were skipped by the ordinary test invocation. Comparing the stored preference bytes before and after that invocation confirmed it made no fixture changes. The runner reports eight discovered methods, including those four skips.
 
-This actual upgrade used the extracted Task1 build. Subsequent Phase3 builds retain the same code2/package, configuration codec and signer. The legacy fixture test additionally covers all configuration fields, including modules, hidden apps, weather opt-in, wallpaper and the IPTV override. This development update is not evidence for forced downgrades or production rollback.
+All 16 launcher smoke checks passed on the delivered APK. They covered startup, home controls, D-pad focus and row movement, separate OwnTV and TV Hub missing states, theme/grid persistence, process recreation, app long-click menu, current version, unconfigured update status and public diagnostics. Some dialog entry used targeted taps. A stationary 900 ms touch hold exercised long-click because the API 29 shell did not reproduce held remote OK.
 
-## Emulator safety and platform coverage
+The final software-emulator sample recorded a 579 ms cold start, 39,334 KiB process PSS, and 41 janky frames among 113, with a 10 ms median. This sample depends on software graphics and host load. Physical startup, memory pressure and frame pacing remain acceptance work.
 
-The workspace-owned emulator is Google Android TV API29 x86,1920×1080/320dpi,1536MiB RAM, two virtual CPU cores, WHPX and software graphics. Test scripts reject non-emulator serial strings before running ADB and verify emulator/API identity before installation or input injection. No unscoped connected-device Gradle task was used. The physical TV was not targeted.
+## Android 10 archive regression
 
-Instrumentation inspects actual Android input and TV Hub intents. All 16 extended UI smoke checks passed on the delivered APK. They cover home and D-pad focus, the absent OwnTV and reserved Hub states, settings persistence after process recreation, app context actions, dynamic build identity, unconfigured updates and on-demand diagnostics. Some dialogs use targeted taps. A stationary 900 ms touch hold exercises long-click. Held remote OK still needs a physical TV test.
+The first real signed-flow test rejected a correct fixture before installation. A diagnostic proved its bytes, package, version and minSdk matched, while Android 10 returned null archive signingInfo for GET_SIGNING_CERTIFICATES alone. The Android 10 framework calls certificate collection only when GET_SIGNATURES is requested. The adapter now requests both flags for collection and continues to trust only current `signingInfo.apkContentsSigners`. It never falls back to legacy signatures or signing history. The retained opt-in diagnostic failed before the fix and passed on the final target. [Android 10 PackageManager source](https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android-10.0.0_r1/core/java/android/content/pm/PackageManager.java)
 
-The recorded HOME resolver stays `com.google.android.tvlauncher/.MainActivity`. No preferred-HOME or system-setting command was issued. There is no installed TV Hub provider or OwnTV player in this emulator; compatibility policies are unit-tested, not an end-to-end provider/playback acceptance test.
+## Signed update and recovery acceptance
 
-## Artifact checks
+A second, isolated API 29 Android TV emulator used non-debuggable release APKs signed with a disposable test certificate. The update driver loaded controlled APK and manifest fixtures from the test APK. It used the production identity reader, engine, update panel, staging and PackageInstaller path. The host pressed the actual app and Android controls.
 
-The delivery script inspects package/version/API, permits only `android.permission.INTERNET`, rejects packaged JNI libraries and verifies the debug APK signature. The development signer is compared with the preserved0.1.0 APK. Source archive entries and bytes are checked against the clean committed checkout; SDKs, build caches, APKs and keystores are excluded.
+The recorded nine acceptance checks passed.
 
-## Limits and deferred work
+1. Install the code-3 signed baseline and explicitly seed every relevant schema-1 setting.
+2. Verify that installation cannot advance before source permission is granted.
+3. Open Android source Settings from the app and allow the SWTV Home row through its switch.
+4. Reach Android's installation prompt, select Cancel, and verify code 3 and all seeded settings remain.
+5. Repeat the update flow, select Android Install, and verify code 4 is installed.
+6. Run the independent preference assertion after the update.
+7. Apply a same-signer code-5 recovery APK through the same confirmation flow.
+8. Verify every setting after recovery.
+9. Confirm HOME still resolves to `com.google.android.tvlauncher/.MainActivity`.
 
-The final software emulator sample recorded 91 janky frames out of 103, with a median frame time of 26 ms. One cold start took 1,976 ms, and the post-smoke process used 29,945 KiB PSS. Physical 32-bit ARM installation, cold start, frame pacing, memory pressure, full remote navigation, wallpaper providers and HDMI/CEC switching remain later acceptance work.
+The recovery fixture was built from the preserved Phase 3 source at `d5c7ede`, with only version name/code changed to 0.3.2/code 5. It demonstrates a real return to earlier code with a higher version and retained preferences. It intentionally predates the update UI. A production recovery should select a known-good release source and retain the intended distribution configuration.
 
-The Phase2 minor wallpaper limitation remains: a failed decode is cached for that URI until selecting a different wallpaper or recreating the Activity. Live weather/offline behavior and an installed OwnTV application were not exercised. Diagnostics report filesystem availability, not total physical storage/chipset identity; unsupported values remain unavailable.
+Successful self-updates terminate the instrumentation target process. The host validates installed version and preferences independently afterward. Explicit source-permission and Android-confirmation screenshots, transcripts, XML and structured results accompany the handoff. The physical TV was outside these tests.
 
-Production signing, GitHub Actions/release publishing, HTTPS manifests, APK integrity/install flows, release migration/rollback tests and all media/playlist/EPG capabilities remain deferred. The original launcher is retained. Network debugging remains as it was after discovery; its requested shutdown belongs after later approved deployment/recovery validation.
+## Offline release infrastructure
 
-## Repeat the checks
+Both workflows passed local YAML, full-SHA action pin, read-only permission and shell syntax checks. The Python packager passed malformed identity/permission, metadata namespace and duplicate, wrong/multiple signer, and tampered-input checks. The SDK-backed negative case rejected an APK lacking the release installation configuration before signing. Positive signing with the disposable key exercised actual zipalign, apksigner, certificate inspection, embedded feed/certificate checks, and manifest/checksum generation from signed bytes.
 
-Run `build-local.ps1` in the prepared workspace, or the README Gradle command in Android Studio's configured JDK/SDK environment. Run the architecture guard. Build `:app:assembleDebugAndroidTest`, then use `scripts/emulator-instrumentation.py` with explicit app/test APK paths and a verifiedAPI29 emulator serial. Do not use an unscoped `connectedDebugAndroidTest` task while a physical device may be attached.
+Hosted GitHub Actions, a public release repository, a live feed and the owner's production signing identity remain to be provisioned. No remote workflow run or production publication is claimed. Network transport and the Android installer were tested separately with controlled TLS and asset fixtures.
 
-```powershell
-python scripts/emulator-smoke.py --adb PATH_TO_ADB --serial emulator-5556 --apk app/build/outputs/apk/debug/app-debug.apk --out PATH_TO_OUTPUT --extended --phase3
-```
+## Repeat and limits
 
-For upgrade validation, `scripts/emulator-upgrade.py` requires an existing code1 app and real saved config; it refuses another version, downgrade or invented baseline. Do not reset the current code2 emulator to rerun it. Use a separate prepared emulator if repeating that scenario.
+Build with the README commands and run `python -m unittest discover -s scripts/tests -v`. The guarded `emulator-upgrade.py` accepts `--from-code 2 --to-code 3` for an existing saved baseline. It requires increasing codes and never resets data. Use `emulator-smoke.py --extended --check-status --expected-version 0.3.0` on a verified API 29 emulator.
+
+The signed harness `scripts/emulator-release-check.py` requires a fresh task AVD named `SWTV_PHASE4_SIGNED_API29`, signed baseline and test APK paths. Build the release instrumentation with `-PswtvTestBuildType=release` and a test-only asset directory containing update.json/update.apk and recovery.json/recovery.apk. Sign the baseline, candidates and instrumentation with one disposable certificate. The host harness refuses physical serials, seeds fixtures only through explicit test opt-in, and drives the native UI. Do not use an unscoped connected-device Gradle task while a physical device may be attached.
+
+Physical 32-bit ARM installation, remote held OK, HDMI/CEC, OEM wallpaper providers and live weather remain unverified. The carried wallpaper limitation persists: a transient failed decode stays cached for that URI until selecting another image or recreating the Activity. Production key backup, repository publication and physical recovery acceptance require their owner-managed steps. Network debugging shutdown remains the requested step after later approved physical deployment.

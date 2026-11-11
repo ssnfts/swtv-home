@@ -1,6 +1,6 @@
 # Build toolchain
 
-Pinned project versions: Android Gradle Plugin8.7.3, Kotlin2.0.21, Gradle8.9, Java17, Android compile/target35 and minimum29. Runtime dependencies are limited to Kotlin's standard library and Android platform APIs; unit tests additionally use JUnit4 and a JVM JSON implementation. The separate Android test APK uses AndroidX runner1.6.2 and JUnit extension1.2.1; these are not application runtime dependencies.
+Pinned project versions are Android Gradle Plugin8.7.3, Kotlin2.0.21, Gradle8.9, Java17, Android compile/target35 and minimum29. Runtime uses Kotlin's standard library, Android platform APIs, OkHttp4.12.0 and transitive Okio3.6.0. The update client uses OkHttp's active call deadline and cancellation, explicit unauthenticated requests and cookie isolation. Unit tests additionally use JUnit4 and a JVM JSON implementation. The separate Android test APK uses AndroidX runner1.6.2 and JUnit extension1.2.1.
 
 The local task uses tools under the task root's `tools/` directory. They are not redistributed in the source ZIP. `build-local.ps1` sets process-local JAVA_HOME, ANDROID_HOME and GRADLE_USER_HOME, then invokes the task-local Gradle. No system PATH or persistent environment setting is modified.
 
@@ -14,4 +14,4 @@ Sources used to prepare this environment:
 
 Official compatibility reference: [Google AGP8.7 release notes](https://developer.android.com/build/releases/agp-8-7-0-release-notes).
 
-Android Studio can also open this project. Select JDK17 and install SDK35/build-tools34.0.0 in the SDK Manager. Set the SDK location through Android Studio or an untracked `local.properties`; no signing key belongs in Git. Phase2 artifacts use Android's debug signing, and are not production signed releases. Secure release signing and update distribution are Phase4 work.
+Android Studio can also open this project. Select JDK17 and install SDK35/build-tools34.0.0 in the SDK Manager. Set the SDK location through Android Studio or an untracked `local.properties`. Development artifacts use Android's debug signing. Production key custody, local signing and distribution setup are described in `RELEASE_SIGNING.md`.

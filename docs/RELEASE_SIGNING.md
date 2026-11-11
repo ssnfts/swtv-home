@@ -32,6 +32,12 @@ The `Android checks` workflow runs on pull requests and pushes to main. The manu
 
 Review the source revision and Actions run before downloading the unsigned artifact. Confirm its checksum against the recorded build output. A local build can use `Get-FileHash -Algorithm SHA256` after the same review. The workflows require a GitHub repository before they can execute remotely.
 
+For a local build, format the input checksum as lowercase hexadecimal.
+
+```powershell
+$unsignedSha256 = (Get-FileHash -LiteralPath $unsignedApk -Algorithm SHA256).Hash.ToLowerInvariant()
+```
+
 ## Sign and prepare the bundle
 
 With `JAVA_HOME` pointing to JDK 17, run the local script from the project. Supply the full reviewed source commit, the unsigned APK checksum, your repository, and the public certificate fingerprint. `$releaseOutput` must name a new directory in an existing parent.

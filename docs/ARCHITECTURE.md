@@ -1,6 +1,6 @@
-# Phase 3 application architecture
+# Application architecture
 
-The application uses native Kotlin and Android Views. Each of the six libraries builds as its own Android AAR with minimum API29, compile SDK35 and JVM17. The app remains `app.swtv.home`, version0.2.0/code2, targeting SDK35. Toolchain versions remain pinned.
+The application uses native Kotlin and Android Views. Each of the six libraries builds as its own Android AAR with minimum API29, compile SDK35 and JVM17. The development app is `app.swtv.home`, version 0.3.0/code 3, targeting SDK35. Toolchain versions remain pinned.
 
 | Module / namespace | Responsibility | Project dependencies |
 | --- | --- | --- |
@@ -9,7 +9,7 @@ The application uses native Kotlin and Android Views. Each of the six libraries 
 | `theme-config` / `app.swtv.theme` | LauncherConfig, ModuleTile, JSON codec/preferences, theme and motion policy | None |
 | `app-discovery` / `app.swtv.discovery` | AppEntry/catalog, package launch discovery, dock/picker rules, TV inputs and typed input intents | None |
 | `device-diagnostics` / `app.swtv.diagnostics` | On-demand read-only snapshot, missing-value handling and formatting | None |
-| `update-manager` / `app.swtv.updates` | Build identity and typed unconfigured update provider | None |
+| `update-manager` / `app.swtv.updates` | Build identity, strict manifest and origin policy, cancellable HTTPS transport, streamed verification and private staging | None |
 | `tv-hub-contract` / `app.swtv.tvhub.contract` | Versioned navigation request, strict compatibility/handler policy and explicit launch client | None |
 
 ```mermaid
@@ -46,4 +46,10 @@ TV input shortcuts revalidate the current passthrough source and connected/stand
 
 Diagnostics run only after an explicit user action. They report public Build fields/ABIs/API, display dimensions/density, OS memory, the current process's memory and the filesystem backing this app's data directory. Unavailable values are labeled; free filesystem space is not advertised as total physical flash. No device identifiers, accounts, private-file inspection, ADB commands or system-setting writes are included.
 
-The update library returns a complete `Unconfigured` state with the application-supplied build identity. It performs no network access, APK downloading, verification, installation or signing. Release distribution and migration/rollback policy belong to Phase4. M3U, XMLTV, channel matching, Media3, media caching and favorites are reserved for the future separate TV Hub application; none is implemented here.
+The update library retains its typed unconfigured provider and adds a release engine. A configured feed is restricted to one launcher GitHub repository. The manifest is capped at 64 KiB and the APK at 32 MiB. Parsing uses the canonical flat ASCII schema emitted by the release script, rejects duplicate or unknown members, and validates exact field types. Downloads stream to a dedicated app-private temporary directory. The engine checks the current and candidate package, increasing version code, supported SDK, expected single certificate fingerprint, byte count and SHA-256. A verified file remains bound to its originating engine and is rechecked before installer handoff.
+
+The HTTPS transport uses pinned OkHttp 4.12.0 with explicit cookie and authentication isolation, manual origin-checked redirects, an active call deadline and cancellation. Okio 3.6.0 is transitive. These are ordinary runtime dependencies inside update-manager. The module graph stays acyclic and library APIs use platform-independent values.
+
+The application reads feed and public certificate configuration from its own release manifest. Debug and unconfigured builds report that state in About. The app owns Android package metadata inspection and one foreground update panel. Check, download, source-permission Settings and install are separate user actions. A bounded worker stages the verified APK into a PackageInstaller session. A non-exported release receiver accepts results tied to the current session and nonce. Android presents installation confirmation and verifies the APK signature. Session and temporary-file cleanup follow cancellation, failure and process restart.
+
+GitHub Actions produces unsigned, revision-recorded build input. The local release script checks the input hash, actual manifest configuration and permissions, then aligns, signs, verifies and creates a complete local bundle. The production key is managed offline by the owner. See `RELEASE_SIGNING.md` for the release and recovery procedure. The future TV Hub has its own version and feed. M3U, XMLTV, channel matching, Media3, media caching and favorites remain reserved for that application.
