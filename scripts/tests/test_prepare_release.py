@@ -41,6 +41,7 @@ class ReleaseMetadataTest(unittest.TestCase):
                    BADGING.replace("versionCode='3'", "versionCode='0'"),
                    BADGING.replace("versionName='0.3.0'", "versionName='0.3.0-beta'"),
                    BADGING + "uses-permission: name='android.permission.READ_CONTACTS'\n",
+                   BADGING + "uses-permission-sdk-23: name='android.permission.READ_CONTACTS'\n",
                    BADGING.replace("uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'\n", '')]
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):

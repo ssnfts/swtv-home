@@ -30,7 +30,7 @@ def inspect_badging(text):
     package = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", text, re.M)
     minimum = re.findall(r"^sdkVersion:'([0-9]+)'$", text, re.M)
     target = re.findall(r"^targetSdkVersion:'([0-9]+)'$", text, re.M)
-    permissions = re.findall(r"^uses-permission: name='([^']+)'", text, re.M)
+    permissions = re.findall(r"^uses-permission(?:-sdk-23)?: name='([^']+)'", text, re.M)
     if not package or package[1] != PACKAGE or minimum != ['29'] or target != ['35']:
         raise ValueError('APK package or Android SDK configuration is incorrect')
     code, name = int(package[2]), package[3]
