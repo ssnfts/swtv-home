@@ -18,8 +18,13 @@ class AndroidUpdateIdentity(context: Context) {
     fun installed(): ApkIdentity? = try {
         identity(context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES))
     } catch (_: PackageManager.NameNotFoundException) { null }
+    @Suppress("DEPRECATION")
     fun archive(file: File): ApkIdentity? =
-        context.packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)?.let(::identity)
+        // Android 10's archive parser collects certificates only when GET_SIGNATURES is set.
+        // Request both flags to populate signingInfo; identity() still trusts only current
+        // apkContentsSigners and never reads legacy signatures or signing history.
+        context.packageManager.getPackageArchiveInfo(file.absolutePath,
+            PackageManager.GET_SIGNATURES or PackageManager.GET_SIGNING_CERTIFICATES)?.let(::identity)
 
     private fun identity(info: PackageInfo): ApkIdentity? {
         val name = info.versionName ?: return null
