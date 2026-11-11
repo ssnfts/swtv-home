@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "packageName": "app.swtv.home",
+  "versionCode": 4,
+  "versionName": "0.3.1",
+  "minSdk": 29,
+  "apkUrl": "https://github.com/example-owner/swtv-home/releases/download/swtv-home-v0.3.1/swtv-home-0.3.1.apk",
+  "apkBytes": 1234567,
+  "apkSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

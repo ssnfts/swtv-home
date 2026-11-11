@@ -24,6 +24,7 @@ jobs:
         run: |
           printf '%s\n' '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check --strict
           python3 scripts/verify-module-boundaries.py
+          python3 -m unittest discover -s scripts/tests -v
       - name: Install pinned Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
       - name: Build and test development APK

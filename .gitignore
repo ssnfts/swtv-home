@@ -7,6 +7,9 @@ local.properties
 *.iml
 *.jks
 *.keystore
+*.p12
+*.pfx
+__pycache__/
 *.apk
 *.log
 captures/

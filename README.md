@@ -35,13 +35,17 @@ HDMI/TV shortcuts enumerate device TV inputs and use the platform's typed channe
 
 Configuration is app-local. Weather is off by default and requires an explicit user-entered location and opt-in. Enabled weather uses Open-Meteo HTTPS endpoints; no device location permission is requested. Clock/date follow the TV's locale/time zone. Weather attribution is displayed in the app.
 
-The Diagnostics control collects an on-demand snapshot of public device/build, display, memory and app-filesystem information. It does not collect serial numbers, accounts or private files, or change system settings. About reports the actual application version and an unconfigured release-update provider. GitHub Actions, hosted manifests, secure release signing and approved APK installation are Phase4 work.
+The Diagnostics control collects an on-demand snapshot of public device/build, display, memory and app-filesystem information. About reports the installed version and update status. Development builds show the unconfigured feed. Configured releases check their dedicated public HTTPS feed only when the user asks, verify the APK, and hand installation to Android for confirmation.
 
 No accessibility remapper, root access, boot receiver, persistent background service, system settings writes or package-disable functionality belongs to this project. System Settings and browser links open only after user action.
 
 ## Modules
 
-Version0.2.0 separates launcher UI, theme configuration, installed-app discovery, read-only device diagnostics, update state and the TV Hub contract into six Android libraries. The application is their composition root. See [architecture](docs/ARCHITECTURE.md) for ownership and dependency rules. The `home` preference file, `config` key and schema1 remain compatible with0.1.0.
+The six Android libraries own launcher UI, theme configuration, installed-app discovery, read-only diagnostics, update logic and the TV Hub contract. The application composes them and owns the Android installer integration. See [architecture](docs/ARCHITECTURE.md) for dependency rules. The `home` preference file, `config` key and schema1 retain compatibility with earlier development builds.
+
+## Release preparation
+
+The development version is 0.3.0/code 3. SHA-pinned GitHub Actions workflows build and check the application, then stage unsigned release input. The local release script aligns and signs the reviewed APK, verifies its identity and generates an HTTPS update manifest and checksums. Python 3.11 or newer is required for the release script. The signing key is managed offline by the release owner. Read [release signing](docs/RELEASE_SIGNING.md) and [installation and recovery](docs/INSTALLATION_AND_RECOVERY.md) before provisioning a production identity or feed.
 
 ## Recovery and approval boundaries
 

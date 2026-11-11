@@ -1,17 +1,31 @@
-# Installation and recovery boundaries
+# Installation and recovery
 
-Version0.2.0 is a debug-signed development build. It was exercised only on an API29 Android TV emulator. Physical SWTV installation and default-HOME changes require a later explicit approval; no such change is part of Phase3.
+SWTV Home uses application ID `app.swtv.home` and Android API 29 or newer. The Phase 4 development build is 0.3.0/code 3. Read `RELEASE_SIGNING.md` before choosing the first production signing identity.
 
-## Later ordinary-app test
+## Development upgrades
 
-After approval, verify the TV IP and ADB authorization again. Use an explicitly selected serial for every operation, verify the APK checksum and signing identity, and install as an ordinary app without clearing its data. Open `app.swtv.home/.MainActivity` explicitly from the stock launcher or ADB. Installation alone does not assign default HOME. Keep `com.google.android.tvlauncher` installed and enabled.
+The local 0.2.0 and 0.3.0 debug builds share the existing development certificate and configuration schema 1. Preserve app data when testing updates. Debug build artifacts produced independently on a GitHub runner may have a different debug certificate. Check the fingerprint before assuming they can update an existing development installation.
 
-The0.1.0→0.2.0 upgrade uses the same package and development signer. Its preference file/key/schema remain `home` / `config` /1. A guarded emulator upgrade confirmed the saved configuration survived without a reset. This is evidence for that development path, not a production rollback guarantee.
+The guarded emulator tools require a serial matching `emulator-<port>` and prove API 29 and emulator identity before installation or input. An upgrade test compares every saved configuration field before and after the update. Release tests use a separate disposable certificate and emulator installation.
 
-## Recovery
+## First physical installation
 
-If the custom home fails during ordinary-app testing, press HOME to return to the unchanged stock launcher and use TV Settings. Explicit stock HOME from Phase1 was `com.google.android.tvlauncher/.MainActivity`; verify it is still available before any future default change. No system package disable, launcher replacement or preferred-HOME shell command is needed for ordinary-app testing.
+Physical TV installation requires the separate deployment approval. Recheck its IP and ADB authorization, verify the signed APK checksum and certificate, and install it as an ordinary app with an explicitly selected device. Open it from the stock app grid or by its explicit Activity. Test remote input, startup, application launch and HDMI before considering any default HOME change.
 
-A development APK with lower versionCode cannot be installed over a newer version through a normal update. Do not use a forced downgrade or uninstall as an automatic rollback: uninstalling removes app-local configuration, and schema compatibility needs separate release validation. Preserve the earlier source/APK and a reviewed state backup. Rebuild a prior known-good implementation with an appropriately higher version and the same signing identity only after the later release/recovery process is designed and approved.
+Use the production-signed APK for the TV's first installation. Keep its certificate consistent for future updates. A production APK cannot update an installation signed with a different debug certificate.
 
-GitHub release signing, secure keys, update manifests/integrity checks, migrations and production rollback remain Phase4. The current update provider is deliberately unconfigured. Once physical deployment and recovery validation are complete, turn off network debugging as requested, then verify port5555 is closed. It has not been turned off during Phase3 development.
+## On-TV updates
+
+The configured release build presents Check for updates, Download and Install update. The user confirms permission to install from this source in Android Settings when needed and confirms installation in Android's package installer. Update failure, cancellation or refusal keeps the installed application available. Source permission is never granted by the updater itself.
+
+## Recover the home screen
+
+Press HOME to return to the stock launcher during ordinary-app testing and use TV Settings. The Phase 1 stock HOME was `com.google.android.tvlauncher/.MainActivity`. Verify that route and Settings are available before a later default-HOME change. Keep the stock package installed and enabled.
+
+For a faulty custom launcher release, rebuild a known-good source revision with the same production key and a version code higher than the faulty release. Retain compatible preference handling and validate the resulting update before distribution. The standard updater rejects a lower version code. Uninstalling erases app-local settings and requires a separately reviewed recovery decision.
+
+Retain earlier APKs, source revisions, receipts and the Phase 1 state snapshot. Protect the original production key and test its backup certificate. Loss of that key requires a fresh installation strategy and data-recovery planning.
+
+## Finish deployment
+
+After approved physical deployment and recovery validation, turn off network debugging and verify TCP 5555 is closed. Physical-TV deployment, HOME selection and network-debugging shutdown are later acceptance steps. The development tests use dedicated emulator profiles.
