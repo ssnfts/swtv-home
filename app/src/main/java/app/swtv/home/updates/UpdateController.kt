@@ -27,7 +27,7 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
     private var generation = 0L
     private var watchdog: Runnable? = null
     private var offered: ReleaseManifest? = null
-    private var verified: VerifiedUpdate? = null
+    private val artifacts = UpdateArtifacts<VerifiedUpdate>()
     private var committed = false
     private var pendingConfirmation: Intent? = null
     private var callback: ((UpdatePanelState) -> Unit)? = null
@@ -55,8 +55,9 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
         consent.foreground = value
         if (!value && !committed && engine != null) {
             cancelOperation()
+            val hasVerified = artifacts.peek() != null
             publish(state.copy(busy = false, message = "Paused. Choose an action to retry.",
-                download = offered != null && verified == null, install = verified != null))
+                download = offered != null && !hasVerified, install = hasVerified))
         }
         if (value && pendingConfirmation != null) {
             val intent = pendingConfirmation!!; pendingConfirmation = null
@@ -67,7 +68,7 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
 
     fun check() {
         if (!ready()) return
-        verified?.close(); verified = null; offered = null
+        artifacts.close(); offered = null
         run("Checking for updates…") { token ->
             val result = engine!!.check(token)
             Completed({ when (result) {
@@ -87,54 +88,55 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
             val update = engine!!.download(manifest, token)
             // A cancelled generation must release a completed result too.
             token.checkOrClose(update)
-            Completed({ verified?.close(); verified = update
+            Completed({ artifacts.replace(update)
                 publish(UpdatePanelState("Version ${manifest.versionName} verified. Choose Install update.", install = true)) }, update::close)
         }
     }
 
     fun install() {
-        if (!consent.canStart(verified != null, permissionGranted())) {
-            if (verified != null && !permissionGranted()) publish(UpdatePanelState(
+        if (!consent.canStart(artifacts.peek() != null, permissionGranted())) {
+            if (artifacts.peek() != null && !permissionGranted()) publish(UpdatePanelState(
                 "Allow this source in Settings, return here, then choose Install update again.", install = true))
             return
         }
-        val update = verified ?: return
+        val update = artifacts.peek() ?: return
         run("Preparing Android installation…") { token ->
-            engine!!.revalidate(update, token)
-            token.check()
-            if (!permissionGranted()) throw SecurityException("Install source permission required")
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                setAppPackageName(context.packageName); setSize(update.manifest.apkBytes)
-                if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
-            }
-            val id = synchronized(sessionLock) {
+            val owned = artifacts.claim(update, token::check) ?: throw UpdateException(UpdateFailure.CANCELLED)
+            owned.use {
+                engine!!.revalidate(owned, token)
                 token.check()
-                activeSession?.let { runCatching { installer.abandonSession(it) } }
-                installer.createSession(params).also { activeSession = it }
-            }
-            var staged = false
-            try {
-                installer.openSession(id).use { session ->
-                    session.openWrite("base.apk", 0, update.manifest.apkBytes).use { output ->
-                        update.file.inputStream().use { input ->
-                            val buffer = ByteArray(16 * 1024)
-                            while (true) { token.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
-                        }
-                        session.fsync(output)
-                    }
+                if (!permissionGranted()) throw SecurityException("Install source permission required")
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                    setAppPackageName(context.packageName); setSize(owned.manifest.apkBytes)
+                    if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
                 }
-                token.check()
-                staged = true
-                Completed({ commit(id) }, { abandonSession(id) })
-            } finally {
-                if (!staged) abandonSession(id)
-                update.close()
+                val id = synchronized(sessionLock) {
+                    token.check()
+                    activeSession?.let { runCatching { installer.abandonSession(it) } }
+                    installer.createSession(params).also { activeSession = it }
+                }
+                var staged = false
+                try {
+                    installer.openSession(id).use { session ->
+                        session.openWrite("base.apk", 0, owned.manifest.apkBytes).use { output ->
+                            owned.file.inputStream().use { input ->
+                                val buffer = ByteArray(16 * 1024)
+                                while (true) { token.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+                            }
+                            session.fsync(output)
+                        }
+                    }
+                    token.check()
+                    staged = true
+                    Completed({ commit(id) }, { abandonSession(id) })
+                } finally {
+                    if (!staged) abandonSession(id)
+                }
             }
         }
     }
 
     private fun commit(id: Int) {
-        verified = null
         if (!consent.open || !consent.foreground || !permissionGranted()) {
             abandonSession(id)
             publish(UpdatePanelState("Installation cancelled. Download again to retry.")); return
@@ -180,7 +182,7 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
         val timeout = Runnable {
             if (consent.open && generation == request) {
                 token.cancel(); generation++; consent.busy = false
-                verified?.close(); verified = null
+                artifacts.close()
                 publish(UpdatePanelState("Update timed out. Choose Check for updates to retry."))
             }
         }.also { watchdog = it }
@@ -199,7 +201,7 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
                 main.post { if (consent.open && generation == request) {
                     main.removeCallbacks(timeout)
                     consent.busy = false
-                    verified?.close(); verified = null
+                    artifacts.close()
                     publish(UpdatePanelState((error as? UpdateException)?.failure?.message ?: "Update operation failed. Try checking again.", download = offered != null))
                 } }
             }
@@ -226,7 +228,7 @@ class UpdateController(context: Context, private val engine: UpdateEngine?) : Cl
     override fun close() {
         if (!consent.open) return
         consent.open = false; callback = null; confirmation = null
-        cancelOperation(); abandon(); verified?.close(); verified = null
+        cancelOperation(); abandon(); artifacts.close()
         InstallResults.clear(this); worker.close()
     }
 

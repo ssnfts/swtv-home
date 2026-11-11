@@ -15,6 +15,9 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PreferencesRetentionInstrumentedTest {
     private fun target(): Context {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue("Requires explicit Phase4 preference fixture opt-in",
+            args.getString("swtvFixtureOptIn") == "true" && args.getString("swtvEmulator") == "phase4")
         assumeTrue("API29 emulator only", Build.VERSION.SDK_INT == 29 &&
             Build.HARDWARE in setOf("ranchu", "goldfish") && Build.FINGERPRINT.contains("generic"))
         return InstrumentationRegistry.getInstrumentation().targetContext
