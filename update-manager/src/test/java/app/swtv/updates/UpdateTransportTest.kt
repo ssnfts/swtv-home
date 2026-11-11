@@ -1,9 +1,15 @@
 package app.swtv.updates
 
-import java.io.ByteArrayInputStream
 import java.net.URI
-import java.security.cert.Certificate
-import javax.net.ssl.HttpsURLConnection
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -11,46 +17,48 @@ class UpdateTransportTest {
     private val start = URI("https://github.com/test/home/releases/latest/download/asset")
     private val cdn = URI("https://release-assets.githubusercontent.com/blob?sig=value")
 
-    @Test fun followsRedirectsManuallyAndClosesBothConnections() {
-        val redirect = Connection(start, 302, mapOf("Location" to listOf(cdn.toString())))
-        val asset = Connection(cdn, 200, mapOf("Content-Length" to listOf("3")), byteArrayOf(1, 2, 3))
-        val connections = mapOf(start to redirect, cdn to asset)
-        val transport = HttpsUpdateTransport({ connections.getValue(it) })
+    @Test fun followsRedirectsManuallyAndClosesBothResponses() {
+        val redirect = Reply(302, mapOf("Location" to listOf(cdn.toString())))
+        val asset = Reply(200, mapOf("Content-Length" to listOf("3")), byteArrayOf(1, 2, 3))
+        val responses = mapOf(start.toString() to redirect, cdn.toString() to asset)
+        val requests = mutableListOf<Request>()
+        val transport = HttpsUpdateTransport(OkHttpClient.Builder().addInterceptor { chain ->
+            requests += chain.request()
+            responses.getValue(chain.request().url.toString()).respond(chain.request())
+        })
         val body = transport.withBody(start, 3, UpdateCancellation(), { from, to ->
             from == start && to == cdn
         }) { it.readBytes() }
         assertArrayEquals(byteArrayOf(1, 2, 3), body)
-        assertTrue(redirect.disconnected)
-        assertTrue(asset.disconnected)
-        assertFalse(asset.instanceFollowRedirects)
-        assertEquals("GET", asset.requestMethod)
-        assertEquals("identity", asset.getRequestProperty("Accept-Encoding"))
-        assertNull(asset.getRequestProperty("Cookie"))
-        assertNull(asset.getRequestProperty("Authorization"))
+        assertTrue(redirect.closed)
+        assertTrue(asset.closed)
+        assertEquals(listOf(start.toString(), cdn.toString()), requests.map { it.url.toString() })
+        assertEquals("GET", requests.last().method)
+        assertEquals("identity", requests.last().header("Accept-Encoding"))
     }
 
     @Test fun rejectsDisallowedAndCleartextRedirectsBeforeOpeningTarget() {
         val destinations = listOf("https://untrusted.example/asset", "http://github.com/test/home/asset")
         destinations.forEach { destination ->
-            val opened = mutableListOf<URI>()
-            val transport = HttpsUpdateTransport({
-                opened += it
-                Connection(it, 302, mapOf("Location" to listOf(destination)))
+            val opened = mutableListOf<String>()
+            val transport = HttpsUpdateTransport(OkHttpClient.Builder().addInterceptor { chain ->
+                opened += chain.request().url.toString()
+                Reply(302, mapOf("Location" to listOf(destination))).respond(chain.request())
             })
             assertFailure(UpdateFailure.NETWORK) {
                 transport.withBody(start, 10, UpdateCancellation(), { _, to ->
                     to.scheme == "http"
                 }) { it.readBytes() }
             }
-            assertEquals(listOf(start), opened)
+            assertEquals(listOf(start.toString()), opened)
         }
     }
 
-    @Test fun enforcesMaximumRedirectsAndSingleDeadline() {
+    @Test fun enforcesMaximumRedirectsAndSharesOneDeadlineAcrossCalls() {
         var hops = 0
-        val loop = HttpsUpdateTransport({
+        val loop = HttpsUpdateTransport(OkHttpClient.Builder().addInterceptor { chain ->
             hops++
-            Connection(it, 302, mapOf("Location" to listOf("/hop-$hops")))
+            Reply(302, mapOf("Location" to listOf("/hop-$hops"))).respond(chain.request())
         })
         assertFailure(UpdateFailure.NETWORK) {
             loop.withBody(start, 10, UpdateCancellation(), { _, _ -> true }) { it.readBytes() }
@@ -58,20 +66,17 @@ class UpdateTransportTest {
         assertEquals(5, hops)
 
         var elapsed = 0L
-        val deadlines = mutableListOf<Int>()
-        val slow = HttpsUpdateTransport({ uri ->
-            object : Connection(uri, 302, mapOf("Location" to listOf("/hop-${deadlines.size}"))) {
-                override fun getResponseCode(): Int {
-                    deadlines += readTimeout
-                    elapsed += 40_000_000_000L
-                    return super.getResponseCode()
-                }
-            }
-        }, { elapsed })
+        val deadlines = mutableListOf<Long>()
+        val slow = HttpsUpdateTransport(OkHttpClient.Builder().addInterceptor { chain ->
+            deadlines += chain.call().timeout().timeoutNanos()
+            elapsed += TimeUnit.SECONDS.toNanos(40)
+            val location = "/hop-" + deadlines.size
+            Reply(302, mapOf("Location" to listOf(location))).respond(chain.request())
+        }, nanoTime = { elapsed })
         assertFailure(UpdateFailure.NETWORK) {
             slow.withBody(start, 10, UpdateCancellation(), { _, _ -> true }) { it.readBytes() }
         }
-        assertEquals(listOf(15_000, 15_000, 15_000), deadlines)
+        assertEquals(listOf(120L, 80L, 40L).map(TimeUnit.SECONDS::toNanos), deadlines)
     }
 
     @Test fun enforcesDeclaredAndStreamingBodyLengths() {
@@ -83,12 +88,14 @@ class UpdateTransportTest {
             emptyMap<String, List<String>>() to byteArrayOf(1, 2, 3, 4),
         )
         bodies.forEach { (headers, bytes) ->
-            val response = Connection(start, 200, headers, bytes)
-            val transport = HttpsUpdateTransport({ response })
+            val response = Reply(200, headers, bytes)
+            val transport = HttpsUpdateTransport(OkHttpClient.Builder().addInterceptor { chain ->
+                response.respond(chain.request())
+            })
             assertFailure(UpdateFailure.RESPONSE_SIZE) {
                 transport.withBody(start, 3, UpdateCancellation(), { _, _ -> false }) { it.readBytes() }
             }
-            assertTrue(response.disconnected)
+            assertTrue(response.closed)
         }
     }
 
@@ -96,22 +103,29 @@ class UpdateTransportTest {
         assertEquals(expected, assertThrows(UpdateException::class.java) { action() }.failure)
     }
 
-    private open class Connection(
-        uri: URI,
+    private class Reply(
         private val code: Int,
         private val headers: Map<String, List<String>>,
         private val bytes: ByteArray = byteArrayOf(),
-    ) : HttpsURLConnection(uri.toURL()) {
-        var disconnected = false
+    ) {
+        var closed = false
+            private set
 
-        override fun getResponseCode() = code
-        override fun getHeaderFields() = headers
-        override fun getInputStream() = ByteArrayInputStream(bytes)
-        override fun connect() = Unit
-        override fun disconnect() { disconnected = true }
-        override fun usingProxy() = false
-        override fun getCipherSuite() = ""
-        override fun getLocalCertificates(): Array<Certificate>? = null
-        override fun getServerCertificates(): Array<Certificate>? = null
+        fun respond(request: Request): Response {
+            val source = object : ForwardingSource(Buffer().write(bytes)) {
+                override fun close() {
+                    closed = true
+                    super.close()
+                }
+            }.buffer()
+            val response = Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .message("")
+                .code(code)
+                .body(source.asResponseBody(contentLength = bytes.size.toLong()))
+            headers.forEach { (name, values) -> values.forEach { response.addHeader(name, it) } }
+            return response.build()
+        }
     }
 }

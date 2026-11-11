@@ -3,14 +3,16 @@ package app.swtv.updates
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
-import java.net.CookieHandler
 import java.net.HttpURLConnection
 import java.net.ProtocolException
 import java.net.Proxy
 import java.net.URI
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.HttpsURLConnection
+import okhttp3.Authenticator
+import okhttp3.CookieJar
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 
 enum class UpdateFailure(val message: String) {
     INVALID_MANIFEST("The release manifest is invalid."),
@@ -27,14 +29,33 @@ enum class UpdateFailure(val message: String) {
 class UpdateException(val failure: UpdateFailure) : Exception(failure.message)
 
 class UpdateCancellation {
-    private val cancelled = AtomicBoolean()
+    private val lock = Any()
+    private val aborts = mutableSetOf<() -> Unit>()
+    @Volatile private var cancelled = false
 
     fun cancel() {
-        cancelled.set(true)
+        val active = synchronized(lock) {
+            if (cancelled) return
+            cancelled = true
+            aborts.toList().also { aborts.clear() }
+        }
+        active.forEach { it() }
     }
 
     fun check() {
-        if (cancelled.get()) throw UpdateException(UpdateFailure.CANCELLED)
+        if (cancelled) throw UpdateException(UpdateFailure.CANCELLED)
+    }
+
+    internal inline fun <T> whileActive(noinline abort: () -> Unit, action: () -> T): T {
+        synchronized(lock) {
+            check()
+            aborts.add(abort)
+        }
+        try {
+            return action()
+        } finally {
+            synchronized(lock) { aborts.remove(abort) }
+        }
     }
 }
 
@@ -50,10 +71,33 @@ interface UpdateTransport {
 }
 
 class HttpsUpdateTransport internal constructor(
-    private val open: (URI) -> HttpsURLConnection,
+    builder: OkHttpClient.Builder,
+    private val budgetMillis: Long = 120_000,
     private val nanoTime: () -> Long = System::nanoTime,
 ) : UpdateTransport {
-    constructor() : this(::openPublicHttps)
+    constructor() : this(OkHttpClient.Builder())
+
+    private val client = builder
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .retryOnConnectionFailure(false)
+        .cookieJar(CookieJar.NO_COOKIES)
+        .authenticator(Authenticator.NONE)
+        .proxyAuthenticator(Authenticator.NONE)
+        .proxy(Proxy.NO_PROXY)
+        .cache(null)
+        .addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            // OkHttp can otherwise follow up a 421 or a 503 even with connection retries off.
+            if (response.code == 421 || response.code == 503) {
+                response.close()
+                throw IOException("Unexpected release HTTP status")
+            }
+            response
+        }
+        .build()
 
     override fun <T> withBody(
         uri: URI,
@@ -63,52 +107,32 @@ class HttpsUpdateTransport internal constructor(
         read: (InputStream) -> T,
     ): T {
         require(maxBytes in 1L..MAX_APK_BYTES)
-        val deadline = Deadline(nanoTime, cancel)
+        val deadline = Deadline(nanoTime, budgetMillis, cancel)
         var current = uri
         var redirects = 0
         try {
             while (true) {
-                deadline.remainingMillis()
                 if (!current.isHttpsOnDefaultPort()) networkFailure()
-                val connection = open(current)
-                try {
-                    connection.instanceFollowRedirects = false
-                    connection.useCaches = false
-                    connection.requestMethod = "GET"
-                    connection.connectTimeout = minOf(10_000, deadline.remainingMillis())
-                    connection.readTimeout = minOf(15_000, deadline.remainingMillis())
-                    connection.setRequestProperty("Accept-Encoding", "identity")
-                    val status = connection.responseCode
-                    deadline.remainingMillis()
-                    when (status) {
-                        HttpURLConnection.HTTP_OK -> {
-                            val length = connection.contentLengthWithin(maxBytes)
-                            val encodings = connection.headers("Content-Encoding")
-                            if (encodings.isNotEmpty() &&
-                                !encodings.singleOrNull().equals("identity", ignoreCase = true)
-                            ) {
-                                networkFailure()
+                val call = client.newCall(
+                    Request.Builder().url(current.toString()).get().header("Accept-Encoding", "identity").build(),
+                )
+                call.timeout().timeout(deadline.remainingMillis(), TimeUnit.MILLISECONDS)
+                current = cancel.whileActive(call::cancel) {
+                    call.execute().use { response ->
+                        deadline.remainingMillis()
+                        when (response.code) {
+                            HttpURLConnection.HTTP_OK -> return readBody(response, maxBytes, deadline, read)
+                            in REDIRECT_CODES -> {
+                                if (++redirects > 4) networkFailure()
+                                val location = response.headers.values("Location").singleOrNull()
+                                    ?.takeIf(String::isNotEmpty)?.let(::parseUpdateUri) ?: networkFailure()
+                                val next = current.resolve(location)
+                                if (!next.isHttpsOnDefaultPort() || !redirectAllowed(current, next)) networkFailure()
+                                next
                             }
-                            return connection.inputStream.use { body ->
-                                val stream = BoundedBody(body, maxBytes, length, deadline)
-                                val result = read(stream)
-                                if (stream.read() != -1) responseSizeFailure()
-                                deadline.remainingMillis()
-                                result
-                            }
+                            else -> networkFailure()
                         }
-                        in REDIRECT_CODES -> {
-                            if (++redirects > 4) networkFailure()
-                            val location = connection.headers("Location").singleOrNull()
-                                ?.takeIf(String::isNotEmpty)?.let(::parseUpdateUri) ?: networkFailure()
-                            val next = current.resolve(location)
-                            if (!next.isHttpsOnDefaultPort() || !redirectAllowed(current, next)) networkFailure()
-                            current = next
-                        }
-                        else -> networkFailure()
                     }
-                } finally {
-                    connection.disconnect()
                 }
             }
         } catch (_: IOException) {
@@ -119,14 +143,33 @@ class HttpsUpdateTransport internal constructor(
         }
     }
 
-    private class Deadline(private val nanoTime: () -> Long, private val cancel: UpdateCancellation) {
+    private fun <T> readBody(response: Response, maxBytes: Long, deadline: Deadline, read: (InputStream) -> T): T {
+        val length = response.contentLengthWithin(maxBytes)
+        val encodings = response.headers.values("Content-Encoding")
+        if (encodings.isNotEmpty() && !encodings.singleOrNull().equals("identity", ignoreCase = true)) {
+            networkFailure()
+        }
+        val body = response.body ?: networkFailure()
+        val stream = BoundedBody(body.byteStream(), maxBytes, length, deadline)
+        val result = read(stream)
+        if (stream.read() != -1) responseSizeFailure()
+        deadline.remainingMillis()
+        return result
+    }
+
+    private class Deadline(
+        private val nanoTime: () -> Long,
+        budgetMillis: Long,
+        private val cancel: UpdateCancellation,
+    ) {
+        private val budget = TimeUnit.MILLISECONDS.toNanos(budgetMillis)
         private val start = nanoTime()
 
-        fun remainingMillis(): Int {
+        fun remainingMillis(): Long {
             cancel.check()
-            val remaining = TimeUnit.SECONDS.toNanos(120) - (nanoTime() - start)
+            val remaining = budget - (nanoTime() - start)
             if (remaining <= 0) networkFailure()
-            return TimeUnit.NANOSECONDS.toMillis(remaining).toInt().coerceAtLeast(1)
+            return TimeUnit.NANOSECONDS.toMillis(remaining).coerceAtLeast(1)
         }
     }
 
@@ -188,18 +231,8 @@ class HttpsUpdateTransport internal constructor(
 private val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
 private val CONTENT_LENGTH = Regex("[0-9]+")
 
-private fun openPublicHttps(uri: URI): HttpsURLConnection {
-    // The launcher uses no process-wide authenticator. Reject an installed cookie handler
-    // instead of risking implicit cookies in this public request.
-    if (CookieHandler.getDefault() != null) networkFailure()
-    return uri.toURL().openConnection(Proxy.NO_PROXY) as HttpsURLConnection
-}
-
-private fun HttpsURLConnection.headers(name: String): List<String> =
-    headerFields.entries.filter { it.key.equals(name, ignoreCase = true) }.flatMap { it.value }
-
-private fun HttpsURLConnection.contentLengthWithin(maxBytes: Long): Long? {
-    val values = headers("Content-Length")
+private fun Response.contentLengthWithin(maxBytes: Long): Long? {
+    val values = headers.values("Content-Length")
     if (values.isEmpty()) return null
     val value = values.singleOrNull()?.trim() ?: responseSizeFailure()
     if (!CONTENT_LENGTH.matches(value)) responseSizeFailure()
