@@ -1,0 +1,55 @@
+name: Build unsigned launcher release
+
+'on':
+  workflow_dispatch:
+    inputs:
+      update_feed:
+        description: Public launcher manifest HTTPS URL
+        required: true
+        type: string
+      certificate_sha256:
+        description: SHA-256 of the public APK signing certificate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify source and Gradle wrapper
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check --strict
+          python3 scripts/verify-module-boundaries.py
+      - name: Install pinned Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
+      - name: Validate and build unsigned APK
+        env:
+          SWTV_FEED: ${{ inputs.update_feed }}
+          SWTV_CERT: ${{ inputs.certificate_sha256 }}
+        run: |
+          test -n "$SWTV_FEED" && test -n "$SWTV_CERT"
+          bash ./gradlew --no-daemon testDebugUnitTest lintDebug :app:lintRelease :app:assembleRelease "-PswtvUpdateFeed=$SWTV_FEED" "-PswtvUpdateCert=$SWTV_CERT"
+      - name: Record exact source and artifact hashes
+        run: |
+          mkdir release-input
+          cp app/build/outputs/apk/release/app-release-unsigned.apk release-input/swtv-home-unsigned.apk
+          git rev-parse HEAD > release-input/SOURCE_COMMIT.txt
+          (cd release-input && sha256sum swtv-home-unsigned.apk SOURCE_COMMIT.txt > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: swtv-home-unsigned-${{ github.sha }}
+          path: release-input/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,36 @@
+name: Android checks
+
+'on':
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Gradle wrapper and Android module boundaries
+        run: |
+          printf '%s\n' '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum --check --strict
+          python3 scripts/verify-module-boundaries.py
+      - name: Install pinned Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
+      - name: Build and test development APK
+        run: bash ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug :app:assembleDebugAndroidTest
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: swtv-home-ci-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
