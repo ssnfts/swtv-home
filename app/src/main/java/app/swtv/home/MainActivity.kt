@@ -21,9 +21,9 @@ import app.swtv.launcher.ui.HomeScreenActions
 import app.swtv.diagnostics.DeviceDiagnostics
 import app.swtv.diagnostics.DiagnosticReport
 import app.swtv.diagnostics.DiagnosticSnapshot
-import app.swtv.updates.BuildIdentity
-import app.swtv.updates.UnconfiguredUpdateProvider
-import app.swtv.updates.UpdateReport
+import app.swtv.updates.UpdateEngine
+import app.swtv.home.updates.AndroidUpdateIdentity
+import app.swtv.home.updates.UpdatePanel
 import app.swtv.tvhub.contract.AndroidHubGateway
 import app.swtv.tvhub.contract.HubClient
 import app.swtv.tvhub.contract.HubLaunchResult
@@ -50,7 +50,7 @@ class MainActivity : Activity(), LauncherHost {
     private lateinit var diagnostics: LatestResource<DiagnosticSnapshot>
     private var diagnosticsDialog: AlertDialog? = null
     private var diagnosticsRequest = 0L
-    private val updates = UnconfiguredUpdateProvider()
+    private var updatePanel: UpdatePanel? = null
     private val hub by lazy { HubClient(AndroidHubGateway(applicationContext)) }
     private val icons by lazy { Icons(this) }
     private var home: HomeScreen? = null
@@ -103,6 +103,7 @@ class MainActivity : Activity(), LauncherHost {
     override fun onResume() {
         super.onResume()
         foreground = true
+        updatePanel?.foreground(true)
         registerForegroundReceivers()
         refresh()
     }
@@ -110,6 +111,7 @@ class MainActivity : Activity(), LauncherHost {
     override fun onPause() {
         savedFocus = home?.focusedKey() ?: savedFocus
         foreground = false
+        updatePanel?.foreground(false)
         handler.removeCallbacks(minuteTick)
         handler.removeCallbacks(themeBoundary)
         handler.removeCallbacks(refreshAfterPackageChange)
@@ -124,6 +126,7 @@ class MainActivity : Activity(), LauncherHost {
     }
 
     override fun onDestroy() {
+        updatePanel?.close()
         icons.close()
         wallpaper.close()
         weather.close()
@@ -226,10 +229,15 @@ class MainActivity : Activity(), LauncherHost {
     }
 
     private fun about() {
-        val identity = BuildIdentity(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_NAME,
-            BuildConfig.VERSION_CODE.toLong(), BuildConfig.BUILD_TYPE)
-        notice("SWTV Home · ${identity.versionName}", UpdateReport.format(identity, updates.state()) +
-            "\n\nOriginal native TV launcher. OwnTV is a separate application. Weather: Open-Meteo, enabled only by you.")
+        val release = AndroidUpdateIdentity.releaseConfig(applicationContext)
+        showUpdatePanel(release?.let { AndroidUpdateIdentity.engine(applicationContext, it) })
+    }
+
+    /** Constructor injection for the test APK; exported intents cannot configure updates. */
+    fun showUpdatePanel(engine: UpdateEngine?) {
+        if (!foreground) return
+        updatePanel?.close()
+        updatePanel = UpdatePanel(this, engine) { updatePanel = null }.also { it.show() }
     }
 
     override fun showDiagnostics() {

@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <application>
+        <meta-data android:name="app.swtv.home.update.FEED_URL" android:value="${swtvUpdateFeed}" />
+        <meta-data android:name="app.swtv.home.update.CERT_SHA256" android:value="${swtvUpdateCert}" />
+        <receiver android:name=".updates.InstallResultReceiver" android:exported="false" />
+    </application>
+</manifest>
