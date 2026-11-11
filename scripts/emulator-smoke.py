@@ -13,7 +13,8 @@ parser.add_argument('--serial', default='emulator-5556')
 parser.add_argument('--apk', required=True)
 parser.add_argument('--out', required=True)
 parser.add_argument('--extended', action='store_true')
-parser.add_argument('--phase3', action='store_true')
+parser.add_argument('--phase3', '--check-status', dest='check_status', action='store_true')
+parser.add_argument('--expected-version', default='0.2.0')
 args = parser.parse_args()
 if not re.fullmatch(r'emulator-\d+', args.serial):
     raise SystemExit('Refusing a non-emulator serial')
@@ -75,12 +76,13 @@ for label in ['OwnTV', 'TV Hub', 'Inputs', 'Settings']:
         raise AssertionError('Missing home label: ' + label)
 screenshot('home')
 
-if args.phase3:
+if args.check_status:
     tap(tree, 'About')
     about = screen('about-updates')
     about_text = labels(about)
-    if '0.2.0' not in about_text or not re.search(r'not configured|aren.?t configured|unconfigured', about_text, re.I):
-        raise AssertionError('About did not show 0.2.0 and honest unconfigured update state')
+    version_pattern = r'(?<![\w.])' + re.escape(args.expected_version) + r'(?![\w.])'
+    if not re.search(version_pattern, about_text) or not re.search(r'not configured|aren.?t configured|unconfigured', about_text, re.I):
+        raise AssertionError(f'About did not show {args.expected_version} and the unconfigured update state')
     screenshot('about-updates')
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
     tree = screen('before-diagnostics')
@@ -198,7 +200,7 @@ log = adb('logcat', '-d', '-t', '400', '-v', 'brief')
 if re.search(r'FATAL EXCEPTION[\s\S]{0,600}Process: app\.swtv\.home', log):
     raise AssertionError('Launcher fatal exception in emulator log')
 (out / 'result.json').write_text(json.dumps({'status':'passed', 'target':args.serial, 'api':29,
-    'checks':['install','startup','home-controls','dpad-focus-transition','owntv-absent-path','hub-reservation','settings-theme-entry','no-observed-fatal-exception'] + (['theme-persistence','grid-columns-persistence','process-recreation','dpad-row-traversal','long-press-app-menu'] if args.extended else []) + (['dynamic-build-identity','unconfigured-update-provider','read-only-diagnostics-api-memory'] if args.phase3 else []),
+    'checks':['install','startup','home-controls','dpad-focus-transition','owntv-absent-path','hub-reservation','settings-theme-entry','no-observed-fatal-exception'] + (['theme-persistence','grid-columns-persistence','process-recreation','dpad-row-traversal','long-press-app-menu'] if args.extended else []) + (['dynamic-build-identity','unconfigured-update-provider','read-only-diagnostics-api-memory'] if args.check_status else []),
     'limits':['Targeted taps were used for dialog entry; comprehensive D-pad traversal requires additional testing.',
               'App long-click was tested with a stationary touch hold because API29 shell held-key synthesis did not reproduce a held remote OK.',
               'No physical-TV navigation, HDMI switching or installed-OwnTV playback was tested.']}, indent=2), encoding='utf-8')

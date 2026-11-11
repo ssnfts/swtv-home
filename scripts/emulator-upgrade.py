@@ -1,4 +1,4 @@
-"""Verify Phase2 -> Phase3 preference preservation on API29 emulator only."""
+"""Verify a same-signer development upgrade on an API 29 emulator only."""
 import argparse
 import json
 from pathlib import Path
@@ -12,9 +12,13 @@ parser.add_argument('--adb', required=True)
 parser.add_argument('--serial', default='emulator-5556')
 parser.add_argument('--apk', required=True)
 parser.add_argument('--out', required=True)
+parser.add_argument('--from-code', type=int, default=1)
+parser.add_argument('--to-code', type=int, default=2)
 args = parser.parse_args()
 if not re.fullmatch(r'emulator-\d+', args.serial):
     raise SystemExit('Refusing a non-emulator serial')
+if not 0 < args.from_code < args.to_code:
+    raise SystemExit('Expected a strictly increasing version code')
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 history = []
@@ -44,20 +48,20 @@ def prefs(name):
     (out / (name + '.xml')).write_text(text, encoding='utf-8')
     entry = ET.fromstring(text).find("string[@name='config']")
     if entry is None:
-        raise AssertionError('Phase2 configuration missing; refusing to invent a baseline')
+        raise AssertionError('Baseline configuration missing')
     value = json.loads(entry.text)
     (out / (name + '.json')).write_text(json.dumps(value, indent=2), encoding='utf-8')
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
 
 old_version = version()
-if old_version != 1:
-    raise SystemExit('Expected installed Phase2 code1; no downgrade or data reset will be attempted')
+if old_version != args.from_code:
+    raise SystemExit(f'Expected installed version code {args.from_code}; got {old_version}')
 before = prefs('before')
 if not Path(args.apk).is_file():
     raise SystemExit('New development APK missing')
 adb('install', '-r', args.apk)
-if version() != 2:
-    raise AssertionError('New application version is not code2')
+if version() != args.to_code:
+    raise AssertionError(f'New application version is not code {args.to_code}')
 startup = adb('shell', 'am', 'start', '-W', '-S', '-n', 'app.swtv.home/.MainActivity')
 (out / 'startup.txt').write_text(startup, encoding='utf-8')
 time.sleep(.5)
@@ -65,8 +69,8 @@ after = prefs('after')
 if before != after:
     raise AssertionError('Existing home/config schema1 data changed across upgrade')
 (out / 'result.json').write_text(json.dumps({'status': 'passed', 'target': args.serial,
-    'fromVersionCode': old_version, 'toVersionCode': 2,
+    'fromVersionCode': old_version, 'toVersionCode': args.to_code,
     'checks': ['same-package update accepted', 'schema1 preference values and types preserved',
                'updated activity started without clearing app data'],
     'limits': ['Emulator-only ordinary debug update; not a production rollback or physical-TV deployment test.']}, indent=2), encoding='utf-8')
-print('PASS: Phase2 code1 -> Phase3 code2 preserves existing configuration')
+print(f'PASS: version code {old_version} -> {args.to_code} preserves existing configuration')
