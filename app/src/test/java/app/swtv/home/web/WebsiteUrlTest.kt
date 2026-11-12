@@ -37,7 +37,7 @@ class WebsiteUrlTest {
     }
 
     @Test fun browserNumericHostAliasesAreRejectedButCanonicalIpv4AndDnsRemainValid() {
-        for (host in listOf("0x7f000001", "0x7f.0.0.1", "127.0x0.0.1", "127.1", "2130706433", "0177.0.0.1", "0X7F.1", "example.123", "example.0xff", "example.0x", "999.1.1.1")) {
+        for (host in listOf("0x7f000001", "0x7f.0.0.1", "127.0x0.0.1", "127.1", "2130706433", "0177.0.0.1", "0X7F.1", "0x", "example.123", "example.0xff", "example.0x", "999.1.1.1")) {
             assertTrue(host, WebsiteUrl.normalize("https://$host/") is WebsiteUrlResult.Invalid)
         }
         for (host in listOf("127.0.0.1", "0.0.0.0", "255.255.255.255", "example.com", "123.example", "0x7f.example")) {
