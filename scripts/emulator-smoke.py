@@ -14,7 +14,7 @@ parser.add_argument('--apk', required=True)
 parser.add_argument('--out', required=True)
 parser.add_argument('--extended', action='store_true')
 parser.add_argument('--phase3', '--check-status', dest='check_status', action='store_true')
-parser.add_argument('--expected-version', default='0.2.0')
+parser.add_argument('--expected-version', default='0.4.0')
 args = parser.parse_args()
 if not re.fullmatch(r'emulator-\d+', args.serial):
     raise SystemExit('Refusing a non-emulator serial')
@@ -57,7 +57,11 @@ def focus(tree):
     return [(n.get('text'), n.get('content-desc'), n.get('bounds')) for n in tree.iter('node') if n.get('focused') == 'true']
 
 def tap(tree, label):
-    nodes = [n for n in tree.iter('node') if n.get('text') == label or n.get('content-desc') == label]
+    nodes = [n for n in tree.iter('node') if n.get('text', '').casefold() == label.casefold() or n.get('content-desc', '').casefold() == label.casefold()]
+    if not nodes and label == 'TV Hub':
+        nodes = [n for n in tree.iter('node') if n.get('text', '').startswith('TV Hub')]
+    if not nodes and label == 'Inputs':
+        nodes = [n for n in tree.iter('node') if n.get('text') == 'HDMI / Inputs']
     if not nodes:
         raise AssertionError('Missing control: ' + label)
     bounds = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', nodes[0].get('bounds', ''))
@@ -173,7 +177,7 @@ if args.extended:
         focused = [n for n in app_focus.iter('node') if n.get('focused') == 'true']
         if focused:
             name = focused[0].get('content-desc') or focused[0].get('text', '')
-            if name not in ['Settings', 'System Settings', 'About', 'Diagnostics', 'OwnTV', 'TV Hub', 'Inputs'] and not name.startswith('+ Slot '):
+            if name.casefold() not in ['settings', 'system settings', 'about', 'diagnostics', 'owntv', 'tv hub', 'inputs', 'hdmi / inputs', 'add favorite', '+ add favorite', 'add website', '+ add website'] and not name.startswith(('+ Slot ', 'TV Hub')):
                 break
     else:
         raise AssertionError('D-pad could not reach an app tile')

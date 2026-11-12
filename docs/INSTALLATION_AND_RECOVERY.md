@@ -1,6 +1,6 @@
 # Installation and recovery
 
-SWTV Home uses application ID `app.swtv.home` and Android API 29 or newer. The Phase 4 development build is 0.3.0/code 3. Read `RELEASE_SIGNING.md` before choosing the first production signing identity.
+SWTV Home uses application ID `app.swtv.home` and Android API 29 or newer. The current build is 0.4.0/code 4. Production 0.3.0 is already installed on the target TV. Use its in-app updater and the same production signer to retain settings. The first-install instructions below describe provisioning a new device.
 
 ## Development upgrades
 
@@ -28,4 +28,4 @@ Retain earlier APKs, source revisions, receipts and the Phase 1 state snapshot. 
 
 ## Finish deployment
 
-After approved physical deployment and recovery validation, turn off network debugging and verify TCP 5555 is closed. Physical-TV deployment, HOME selection and network-debugging shutdown are later acceptance steps. The development tests use dedicated emulator profiles.
+After approved physical deployment and recovery validation, turn off network debugging and verify TCP 5555 is closed. On the target TV, network ADB was switched back to USB mode after the earlier deployment and three TCP 5555 probes failed while the TV remained reachable. Reboot persistence was not tested. The 0.4.0 OTA update does not require reopening ADB. Keep stock HOME selected, as the owner requested. Development tests use dedicated emulator profiles.

@@ -1,5 +1,7 @@
 # Phase 4 validation
 
+This is the historical 0.3.0 development record. Subsequent production provisioning and physical acceptance are recorded in the delivery reports. See [0.4.0 Cyberpunk and website validation](VALIDATION_0_4.md) for the current development change; older unprovisioned/pending statements below describe the earlier test date.
+
 Validated locally on 11 November 2026. Development version 0.3.0/code 3 targets Android API 29 and newer, with compile/target SDK 35. Final application source is commit `a1015dcd1733a29a84f70ff44bac934b42c8e298`. Later documentation and test-harness commits are recorded in the delivered source archive metadata.
 
 ## Build and security checks

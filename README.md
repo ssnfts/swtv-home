@@ -25,9 +25,13 @@ See `docs/TOOLCHAIN.md` for tool sources and version checks, and `docs/VALIDATIO
 
 Open SWTV Home through the TV's normal app grid after a separately approved ordinary-app installation. A HOME intent entry is declared so the app can be selected through the system in a later phase; installation does not request or force the default. Long-press OK on an app for pin/hide actions. Settings manage dock order, app-grid columns, themes, motion, wallpaper, module tiles, weather and the IPTV shortcut target.
 
-The dedicated **OwnTV** tile defaults to package `tv.own.owntv`, verified from [the requested GitHub project's build configuration](https://github.com/Thedurancode/owntv/blob/main/app/build.gradle.kts). If OwnTV is absent, choose another installed app or explicitly open [OwnTV releases](https://github.com/Thedurancode/owntv/releases) in a browser. The launcher does not download or install OwnTV. Choose a compatible32-bit ARM release only after verifying its source and compatibility in the later provisioning phase. Package lookup and an ordinary launch shortcut do not embed any OwnTV code.
+The dedicated **OwnTV** tile defaults to package `tv.own.owntv`, verified from [the requested GitHub project's build configuration](https://github.com/Thedurancode/owntv/blob/main/app/build.gradle.kts). If OwnTV is absent, choose another installed app or explicitly open [OwnTV upstream releases](https://github.com/ahXN00/OwnTV/releases) in a browser. The launcher does not download or install OwnTV. A separately provisioned player must support the TV's 32-bit ARM app ABI. Package lookup and an ordinary launch shortcut do not embed any OwnTV code.
 
 The separate **TV Hub** tile reserves `app.swtv.tvhub` for future development through a versioned, explicit navigation contract. See [the provider interface](docs/TV_HUB_INTERFACE.md). There is no TV Hub APK, playlist ingestion, EPG synchronization or streaming/playback implementation in this launcher.
+
+The Cyberpunk HUD uses charcoal panels, electric-yellow accents and cyan focus borders. Select **Settings → Theme → Dark** for this appearance; existing Light/Auto preferences are retained. Motion follows the reduced-motion setting and device policy.
+
+**Web apps → Add website** saves an HTTPS address as a home tile. Open it in SWTV's own full-screen viewer, or use Android **Share → Add to SWTV** when the sending browser supports Share. Hold OK on a website tile to rename, edit, move or remove it. The viewer's Bookmark control can save the current page. See [website tiles and controls](docs/WEB_APPS.md).
 
 HDMI/TV shortcuts enumerate device TV inputs and use the platform's typed channel intent. OEM permission and remote behavior require validation on the actual TV before claiming input switching works there. Unavailable targets produce an explanatory dialog instead of altering firmware or app state.
 
@@ -45,10 +49,10 @@ The six Android libraries own launcher UI, theme configuration, installed-app di
 
 ## Release preparation
 
-The development version is 0.3.0/code 3. SHA-pinned GitHub Actions workflows build and check the application, then stage unsigned release input. The local release script aligns and signs the reviewed APK, verifies its identity and generates an HTTPS update manifest and checksums. Python 3.11 or newer is required for the release script. The signing key is managed offline by the release owner. Read [release signing](docs/RELEASE_SIGNING.md) and [installation and recovery](docs/INSTALLATION_AND_RECOVERY.md) before provisioning a production identity or feed.
+The development version is 0.4.0/code 4. SHA-pinned GitHub Actions workflows build and check the application, then stage unsigned release input. The local release script aligns and signs the reviewed APK, verifies its identity and generates an HTTPS update manifest and checksums. Python 3.11 or newer is required for the release script. The signing key is managed offline by the release owner. Read [release signing](docs/RELEASE_SIGNING.md) and [installation and recovery](docs/INSTALLATION_AND_RECOVERY.md) before provisioning a production identity or feed.
 
 ## Recovery and approval boundaries
 
-Keep `com.google.android.tvlauncher` installed and enabled. Physical-TV installation, real-remote/HDMI tests, default-HOME selection and network-debugging shutdown have not been authorized as part of this development step. Default-HOME changes always need a separate explicit approval. Before making any such change, test the stock-launcher and Settings recovery routes recorded in the Phase1 report.
+Keep `com.google.android.tvlauncher` installed and enabled. The owner chose to keep the stock launcher as default. The earlier 0.3.0 production app and OwnTV were installed as ordinary apps; the owner reported remote navigation, application launching and HDMI switching working. Version 0.4.0 requires its own physical acceptance. Default-HOME changes always need separate explicit approval. Before making any such change, test the stock-launcher and Settings recovery routes recorded in the Phase1 report.
 
 The existing Phase1 state snapshot remains outside this project. No reset, broad restore script, firmware image or system package modification is needed to test this launcher as an ordinary app.

@@ -1,10 +1,10 @@
 # Application architecture
 
-The application uses native Kotlin and Android Views. Each of the six libraries builds as its own Android AAR with minimum API29, compile SDK35 and JVM17. The development app is `app.swtv.home`, version 0.3.0/code 3, targeting SDK35. Toolchain versions remain pinned.
+The application uses native Kotlin and Android Views. Each of the six libraries builds as its own Android AAR with minimum API29, compile SDK35 and JVM17. The development app is `app.swtv.home`, version 0.4.0/code 4, targeting SDK35. Toolchain versions remain pinned.
 
 | Module / namespace | Responsibility | Project dependencies |
 | --- | --- | --- |
-| `app` / `app.swtv.home` | Sole application/Activity, lifecycle, foreground observers, persistence callbacks, worker composition and service actions | All six libraries |
+| `app` / `app.swtv.home` | Application composition, Activities, lifecycle, foreground observers, persistence, worker composition and service actions | All six libraries |
 | `launcher-ui` / `app.swtv.launcher.ui`, `.runtime` | Complete reusable HomeScreen renderer, remote focus, settings, bounded icons/wallpaper/weather workers | theme-config, app-discovery |
 | `theme-config` / `app.swtv.theme` | LauncherConfig, ModuleTile, JSON codec/preferences, theme and motion policy | None |
 | `app-discovery` / `app.swtv.discovery` | AppEntry/catalog, package launch discovery, dock/picker rules, TV inputs and typed input intents | None |
@@ -33,6 +33,16 @@ MainActivity owns foreground catalog refresh, package/time observation, theme sc
 Icon work is bounded to one running and48 queued requests with a48-entry finished cache and generation-safe weak view bindings. Wallpaper decoding is sampled off main, coalesces the same URI and admits one running plus one latest pending request. Weather is opt-in, uses a manually entered place, coalesces per-city work and enforces cooldown/cache identity. No location permission or persistent service exists. Pause cancels foreground work; destruction closes workers.
 
 Dock display/editing share one effective sequence. Catalog selections retain stable package/input IDs across refresh. Persisted pins survive transient package gaps; explicit user edits reconcile the current sequence. D-pad focus remains attached to stable control keys. The stock launcher and Settings recovery routes remain available.
+
+## Website tiles
+
+The application owns website normalization, versioned storage, editing and the WebView lifecycle in `app.swtv.home.web`. The UI library receives only `WebTile(id,title,host)` display values and open/edit/add callbacks. Home does not construct a WebView or request site images/content. Stable `web:<id>` focus keys survive rename and reorder.
+
+Websites use a separate private `swtv_websites` preferences file, `favorites` key and schema 1. The original `home/config` schema is unchanged. A bounded single-thread worker executes reads and commits; process-wide coordination serializes store instances. Unknown or unreadable data is not silently replaced. At most 32 HTTPS sites, 100 title characters and 2048 address characters are accepted. Numeric and malformed authorities are rejected rather than repaired.
+
+The nonexported, single-task WebActivity resolves a current saved ID before constructing its one owned WebView. Native controls provide history, bookmarking, reload, pointer, fullscreen escape and explicit return to MainActivity. A separate exported ACTION_SEND/text/plain Activity validates bounded input and requires Save confirmation. It has no ACTION_VIEW/default-browser registration. Browser favorites and sessions from other packages are not accessed.
+
+Web navigation reuses the HTTPS policy. Local file/content access, mixed content, native JavaScript bridges, automatic windows, downloads and web permissions are unavailable; TLS errors are cancelled. JavaScript and DOM storage support ordinary sites inside SWTV's own profile. Media requires a user gesture. Pause stops ordinary media elements and pauses WebView; arbitrary site/iframe/audio behavior still requires compatibility testing. See [website behavior and limits](WEB_APPS.md).
 
 ## External handoffs
 
