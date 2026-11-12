@@ -28,7 +28,11 @@ class SafeWebClient(
         else location(url)
     }
     override fun onPageFinished(view: WebView, url: String?) { location(view.url); title(view.title) }
-    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) { location(url) }
+    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+        location(url)
+        // Same-document history need not produce another title/page-finished callback.
+        title(view.title)
+    }
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
         handler.cancel(); this.error("Secure connection failed. Certificate errors cannot be bypassed.")
     }

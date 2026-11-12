@@ -8,7 +8,7 @@ class WebsiteUrlTest {
         (WebsiteUrl.normalize(text) as WebsiteUrlResult.Valid).address
 
     @Test fun bareHostUsesHttpsAndRootPath() {
-        assertEquals("https://bingebang.st/", valid("bingebang.st").value)
+        assertEquals("https://example.org/", valid("example.org").value)
     }
 
     @Test fun schemeHostAndDefaultPortDeduplicateWithoutChangingEncodedComponents() {

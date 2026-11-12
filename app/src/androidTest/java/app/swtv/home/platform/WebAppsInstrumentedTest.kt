@@ -6,11 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.EditText
+import android.widget.ListView
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -72,6 +74,7 @@ class WebAppsInstrumentedTest {
         val context = target(); val store = store(context); val saved = fixture(store)
         var launched: Activity? = null
         try {
+            InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
             val activity = launch(WebActivity.intent(context, saved.id))
             launched = activity
             awaitUi { activity.findViewById<WebView>(R.id.web_content) != null }
@@ -86,8 +89,8 @@ class WebAppsInstrumentedTest {
                 web.loadDataWithBaseURL("https://example.com/w2/", "<html><head><title>Controlled fixture</title></head><body><a href='https://example.com/next'>Next</a><button>Focus target</button></body></html>", "text/html", "UTF-8", null)
             }
             awaitUi { activity.findViewById<TextView>(R.id.web_origin).text.contains("Controlled fixture") }
+            key(KeyEvent.KEYCODE_MENU)
             ui {
-                activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MENU))
                 assertTrue(activity.findViewById<View>(R.id.web_back).hasFocus())
                 // Chromium debug URL belongs only to the explicitly guarded test APK.
                 activity.findViewById<WebView>(R.id.web_content).loadUrl("chrome://crash")
@@ -181,16 +184,169 @@ class WebAppsInstrumentedTest {
             second?.let { cleanup(store, it) }; cleanup(store, first)
         }
     }
+    @Test fun sameDocumentHistoryKeepsNativeAndBookmarkTitle() = controlledPage(
+        "<title>Stable document title</title><body>Same document history fixture</body>"
+    ) { activity, web ->
+        assertEquals("\"https://example.com/w2/changed#same-document\"",
+            evaluate(web, "history.pushState({}, '', '/w2/changed#same-document'); location.href;"))
+        ui {
+            // Some providers additionally emit onPageFinished for pushState. Exercise the
+            // history callback alone too: it must not depend on that optional later callback.
+            web.webViewClient.doUpdateVisitedHistory(web, web.url, false)
+            assertTrue(activity.findViewById<TextView>(R.id.web_origin).text.contains("Stable document title"))
+            assertEquals("Stable document title", web.title)
+            // WebView83 keeps loadDataWithBaseURL's virtual history URL even after the
+            // DOM pushState above. This fixture tests title retention, not real-load URL updates.
+            assertEquals("Controlled page must expose its HTTPS history URL to native bookmarks",
+                "https://example.com/w2/", web.url)
+            assertTrue(activity.findViewById<View>(R.id.web_bookmark).performClick())
+        }
+        awaitUi { dialogRoot(activity) != null }
+        ui {
+            val form = dialogRoot(activity)!!
+            assertEquals("Stable document title", form.findViewById<EditText>(R.id.website_title).text.toString())
+            assertEquals("https://example.com/w2/", form.findViewById<EditText>(R.id.website_address).text.toString())
+            form.findViewById<View>(android.R.id.button2).performClick()
+        }
+    }
+    @Test fun remotePointerDispatchesBoundedTouchesToControlledPage() = controlledPage("""
+        <title>Pointer fixture</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>html,body{margin:0;overflow:hidden}button{position:fixed;inset:0;width:100%;height:100%;border:0}</style>
+        <button onclick="window.hits=(window.hits||0)+1">Pointer target</button>
+    """.trimIndent()) { activity, web ->
+        val touches = mutableListOf<Pair<Float, Float>>()
+        ui {
+            web.setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_UP) touches.add(event.x to event.y)
+                false
+            }
+        }
+        enablePointer(activity)
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        awaitScript(web, "window.hits === 1")
+        var horizontalSteps = 0
+        var verticalSteps = 0
+        ui {
+            horizontalSteps = web.width / 24 + 2
+            verticalSteps = web.height / 24 + 2
+        }
+        repeat(horizontalSteps) { key(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        repeat(verticalSteps) { key(KeyEvent.KEYCODE_DPAD_DOWN) }
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        awaitScript(web, "window.hits === 2")
+        ui {
+            assertEquals(2, touches.size)
+            assertTrue(touches.all { (x, y) -> x >= 0 && x < web.width && y >= 0 && y < web.height })
+            assertEquals((web.width - 1).toFloat(), touches.last().first, 0f)
+            assertEquals((web.height - 1).toFloat(), touches.last().second, 0f)
+        }
+        repeat(verticalSteps) { key(KeyEvent.KEYCODE_DPAD_UP) }
+        ui {
+            assertTrue(activity.findViewById<View>(R.id.web_back).hasFocus())
+            assertEquals(1, countWebViews(activity.window.decorView))
+        }
+    }
+    @Test fun controlledHtmlFullscreenBackAndMenuRestoreNativeControls() = controlledPage("""
+        <title>Fullscreen fixture</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>html,body{margin:0;overflow:hidden}button{position:fixed;inset:0;width:100%;height:100%;border:0}</style>
+        <button onclick="this.requestFullscreen()">Enter HTML fullscreen</button>
+    """.trimIndent()) { activity, web ->
+        enablePointer(activity)
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        awaitUi { !activity.findViewById<View>(R.id.web_origin).isShown }
+        awaitScript(web, "document.fullscreenElement !== null")
+        ui {
+            assertFalse(activity.findViewById<WebPointer>(R.id.web_pointer).pointerEnabled)
+        }
+        key(KeyEvent.KEYCODE_BACK)
+        awaitUi { activity.findViewById<View>(R.id.web_origin).isShown }
+        awaitScript(web, "document.fullscreenElement === null")
+        ui { assertFalse(activity.isFinishing); assertSame(web, activity.findViewById(R.id.web_content)) }
+        enablePointer(activity)
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        awaitUi { !activity.findViewById<View>(R.id.web_origin).isShown }
+        key(KeyEvent.KEYCODE_MENU)
+        awaitUi { activity.findViewById<View>(R.id.web_origin).isShown }
+        awaitScript(web, "document.fullscreenElement === null")
+        ui {
+            assertTrue(activity.findViewById<View>(R.id.web_back).hasFocus())
+            assertSame(web, activity.findViewById(R.id.web_content))
+            assertEquals(1, countWebViews(activity.window.decorView))
+        }
+    }
+    private fun controlledPage(html: String, test: (Activity, WebView) -> Unit) {
+        val context = target(); val store = store(context); val saved = fixture(store)
+        var launched: Activity? = null
+        try {
+            InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+            val activity = launch(WebActivity.intent(context, saved.id)); launched = activity
+            awaitUi { activity.findViewById<WebView>(R.id.web_content) != null }
+            lateinit var web: WebView
+            ui {
+                web = activity.findViewById(R.id.web_content)
+                // A native bookmark reads WebView.url, so provide a real HTTPS history URL
+                // as well as the document's base origin instead of the null/about:blank default.
+                web.loadDataWithBaseURL("https://example.com/w2/", html, "text/html", "UTF-8", "https://example.com/w2/")
+            }
+            val expectedTitle = Regex("<title>(.*?)</title>").find(html)!!.groupValues[1]
+            awaitScript(web, "document.readyState === 'complete' && document.title === ${org.json.JSONObject.quote(expectedTitle)}")
+            awaitUi { activity.findViewById<TextView>(R.id.web_origin).text.contains(expectedTitle) }
+            test(activity, web)
+        } finally { ui { launched?.finish() }; cleanup(store, saved) }
+    }
+    private fun evaluate(web: WebView, script: String): String? {
+        val ready = java.util.concurrent.CountDownLatch(1)
+        var value: String? = null
+        ui { web.evaluateJavascript(script) { value = it; ready.countDown() } }
+        assertTrue("Timed out awaiting controlled page script", ready.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        return value
+    }
+    private fun awaitScript(web: WebView, expression: String) {
+        val deadline = System.currentTimeMillis() + 10000
+        while (System.currentTimeMillis() < deadline) {
+            if (evaluate(web, expression) == "true") return
+            Thread.sleep(50)
+        }
+        fail("Controlled page assertion did not become true: $expression")
+    }
+    private fun key(code: Int) {
+        // Use Android's input path, including exiting touch mode, as a TV remote does.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(code)
+    }
+    private fun enablePointer(activity: Activity) {
+        ui { activity.findViewById<View>(R.id.web_options).performClick() }
+        awaitUi { optionsList(activity) != null }
+        ui {
+            val list = optionsList(activity)!!
+            assertEquals("Enable pointer", list.adapter.getItem(0).toString())
+            list.performItemClick(list.getChildAt(0), 0, list.adapter.getItemId(0))
+            assertTrue(activity.findViewById<WebPointer>(R.id.web_pointer).pointerEnabled)
+            assertTrue(activity.findViewById<WebView>(R.id.web_content).hasFocus())
+        }
+    }
+    private fun optionsList(activity: Activity): ListView? {
+        fun find(view: View): ListView? {
+            if (view is ListView) return view
+            if (view is ViewGroup) for (index in 0 until view.childCount) find(view.getChildAt(index))?.let { return it }
+            return null
+        }
+        return android.view.inspector.WindowInspector.getGlobalWindowViews().firstOrNull {
+            it.findViewById<TextView>(android.R.id.title)?.text == "Web options" && ownedWindow(it, activity)
+        }?.let(::find)
+    }
     private fun countWebViews(view: View): Int = (if (view is WebView) 1 else 0) +
         (if (view is ViewGroup) (0 until view.childCount).sumOf { countWebViews(view.getChildAt(it)) } else 0)
     private fun dialogRoot(activity: Activity): View? {
         // Public API29 inspection of this process's windows; no hidden API or production endpoint.
         return android.view.inspector.WindowInspector.getGlobalWindowViews().lastOrNull { root ->
-            root.findViewById<View>(R.id.website_save) != null && root.context.let {
-                var context: Context = it
-                while (context is android.content.ContextWrapper && context !is Activity) context = context.baseContext
-                context === activity
-            }
+            root.findViewById<View>(R.id.website_save) != null && ownedWindow(root, activity)
         }
+    }
+    private fun ownedWindow(view: View, activity: Activity): Boolean {
+        var context = view.context
+        while (context is android.content.ContextWrapper && context !is Activity) context = context.baseContext
+        return context === activity
     }
 }
