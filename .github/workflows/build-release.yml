@@ -34,7 +34,10 @@ jobs:
           python3 scripts/verify-module-boundaries.py
           python3 -m unittest discover -s scripts/tests -v
       - name: Install pinned Android SDK packages
-        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
+        run: |
+          sdkmanager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" 'platforms;android-35' 'build-tools;34.0.0'
       - name: Validate and build unsigned APK
         env:
           SWTV_FEED: ${{ inputs.update_feed }}
