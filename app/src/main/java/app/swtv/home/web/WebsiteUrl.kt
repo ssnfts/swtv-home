@@ -56,9 +56,14 @@ object WebsiteUrl {
             if (host.length !in 1..253 || host.endsWith('.') || host.split('.').any {
                     it.length !in 1..63 || !Regex("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?").matches(it)
                 }) return invalid(WebsiteUrlError.INVALID_HOST)
-            if (host.all { it in '0'..'9' || it == '.' }) {
+            // Chromium treats a numeric final label as an IPv4 candidate, including hex/short forms.
+            // Only canonical four-decimal IPv4 may cross this validator/browser boundary.
+            val lastLabel = host.substringAfterLast('.')
+            if (lastLabel.all { it in '0'..'9' } || Regex("0x[0-9a-f]*").matches(lastLabel)) {
                 val parts = host.split('.')
-                if (parts.size != 4 || parts.any { it.toIntOrNull() !in 0..255 || (it.length > 1 && it.startsWith('0')) }) {
+                if (parts.size != 4 || parts.any {
+                        !Regex("0|[1-9][0-9]*").matches(it) || it.toIntOrNull() !in 0..255
+                    }) {
                     return invalid(WebsiteUrlError.INVALID_HOST)
                 }
             }

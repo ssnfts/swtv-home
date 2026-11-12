@@ -73,9 +73,9 @@ class WebsiteStoreTest {
         memory.failWrite = false
         memory.throwWrite = true
         assertEquals(WebsiteResult.Failure(WebsiteError.PERSISTENCE_FAILED), store.save("One", "one.example"))
-        memory.throwRead = true
-        assertEquals(WebsiteResult.Failure(WebsiteError.UNREADABLE_DATA), store.snapshot())
-        assertEquals(WebsiteResult.Failure(WebsiteError.UNREADABLE_DATA), store.save("One", "one.example"))
+        val unreadableStore = WebsiteStore(MemoryStorage().apply { throwRead = true })
+        assertEquals(WebsiteResult.Failure(WebsiteError.UNREADABLE_DATA), unreadableStore.snapshot())
+        assertEquals(WebsiteResult.Failure(WebsiteError.UNREADABLE_DATA), unreadableStore.save("One", "one.example"))
     }
 
     @Test fun repositoriesRereadSharedStateAndNoOpsAvoidWrites() {
@@ -110,5 +110,38 @@ class WebsiteStoreTest {
         for (document in listOf("{schemaVersion:1,entries:[]}", "{'schemaVersion':1,'entries':[]}", """{"schemaVersion":1,"entries":[],}""", """{"schemaVersion":1,"entries":[,]}""", """{"schemaVersion":1,"entries":[]/*comment*/}""")) {
             assertEquals(document, WebsiteResult.Failure(WebsiteError.UNREADABLE_DATA), WebsiteCodec.decode(document))
         }
+    }
+
+    @Test fun dirtyReadableValueCannotMakeRetrySuccessfulBeforeDurableCommit() {
+        val dirty = object : WebsiteStringStorage {
+            var readable: String? = null
+            var durable: String? = null
+            var writes = 0
+            var fail = true
+            override fun read() = readable
+            override fun write(value: String): Boolean {
+                writes++
+                readable = value // SharedPreferences changes memory before a failed disk commit.
+                if (fail) return false
+                durable = value
+                return true
+            }
+        }
+        val first = WebsiteStore(dirty)
+        val second = WebsiteStore(dirty)
+        val failure = WebsiteResult.Failure(WebsiteError.PERSISTENCE_FAILED)
+        assertEquals(failure, first.save("One", "one.example"))
+        assertNotNull(dirty.readable)
+        assertNull(dirty.durable)
+        assertEquals(failure, second.save("One", "one.example"))
+        assertEquals(2, dirty.writes)
+        assertNull(dirty.durable)
+        assertTrue(success(second.snapshot()).favorites.entries.isEmpty())
+        dirty.fail = false
+        val saved = success(second.save("One", "one.example"))
+        assertEquals(saved.favorites.entries, success(WebsiteCodec.decode(dirty.durable)).favorites.entries)
+        assertEquals(3, dirty.writes)
+        assertFalse(success(first.save("One", "one.example")).changed)
+        assertEquals(3, dirty.writes)
     }
 }
