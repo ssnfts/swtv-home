@@ -1,18 +1,14 @@
 package app.swtv.launcher.ui
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.provider.Settings
 import android.text.TextUtils
-import android.text.format.DateUtils
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ScrollView
-import android.widget.TextView
 import app.swtv.discovery.AppEntry
 import app.swtv.discovery.CatalogPicker
 import app.swtv.discovery.CatalogRules
@@ -41,8 +37,7 @@ class HomeScreen(
     private val inputs get() = host.inputs
     private val dockPackages get() = host.dockPackages
     private val ui = HomeUi(activity, config)
-    private var clock: TextView? = null
-    private var weatherStatus: TextView? = null
+    private var header: HudHeader? = null
     private var active = true
 
     fun render(savedFocus: String?) {
@@ -54,8 +49,10 @@ class HomeScreen(
         buildModules(ui)
         buildDock(ui)
         buildApps(ui)
-        ui.root.addView(ui.text("Hold OK on an app to pin, unpin or hide. Hold OK on a custom module to edit.", 13f))
-        ui.root.addView(ui.text("Inputs: connected/standby passthrough only. For tuner channels, use your TV app.", 13f))
+        ui.root.addView(ui.text("Hold OK on apps for pin / hide. Hold OK on custom modules to edit.", 13f).apply {
+            setTextColor(ui.palette.secondary)
+            setBackgroundColor(ui.palette.background)
+        })
         ui.finish(savedFocus)
     }
 
@@ -71,13 +68,12 @@ class HomeScreen(
         val frame = FrameLayout(activity).apply {
             clipChildren = false
             clipToPadding = false
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                if (ui.light) intArrayOf(0xFFF0F6FC.toInt(), 0xFFD9E7F1.toInt())
-                else intArrayOf(0xFF080F22.toInt(), 0xFF1C2948.toInt()))
+            setBackgroundColor(ui.palette.background)
         }
         val scroll = ScrollView(activity).apply {
             clipChildren = false
             clipToPadding = false
+            isSmoothScrollingEnabled = HudTokens.motion(activity, config)
             addView(ui.root)
         }
         frame.addView(scroll)
@@ -88,19 +84,19 @@ class HomeScreen(
     }
 
     private fun buildStatus(ui: HomeUi) {
-        clock = ui.text("", 28f).also { ui.root.addView(it) }
-        weatherStatus = ui.text("", 14f).also { ui.root.addView(it) }
+        header = HudHeader(activity, ui).also { ui.root.addView(it.view) }
     }
 
-    fun updateClock() {
-        val flags = DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or
-            DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_YEAR
-        clock?.text = DateUtils.formatDateTime(activity, System.currentTimeMillis(), flags)
-    }
+    fun updateClock() { header?.updateClock() }
 
     fun refreshWeather() {
-        val status = weatherStatus ?: return
-        weather.refresh(config.weatherEnabled, config.weatherCity) { status.text = it }
+        val status = header?.weather ?: return
+        weather.refresh(config.weatherEnabled, config.weatherCity) {
+            if (active) {
+                status.text = it
+                status.visibility = if (config.weatherEnabled && it.isNotBlank()) View.VISIBLE else View.GONE
+            }
+        }
     }
 
     private fun buildToolbar(ui: HomeUi) {
@@ -120,9 +116,13 @@ class HomeScreen(
             ui.tile("owntv", "OwnTV", {
                 if (!discovery.launchPackage(config.iptvPackage)) missingOwnTv()
             }),
-            ui.tile("tvhub", "TV Hub", { actions.openTvHub() }),
-            ui.tile("inputs", "Inputs", { chooseInput() })
-        ))
+            ui.tile("inputs", "HDMI / Inputs", { chooseInput() }),
+            ui.tile("tvhub", "TV Hub · Reserved", { actions.openTvHub() })
+        ).onEach { (it as Button).apply {
+            minHeight = ui.dp(64)
+            typeface = HudTokens.heading
+            textSize = 21f
+        } })
     }
 
     private fun buildModules(ui: HomeUi) {
@@ -138,32 +138,35 @@ class HomeScreen(
 
     private fun appTile(ui: HomeUi, app: AppEntry, section: String): View =
         ui.tile("$section:${app.packageName}", app.label, { launch(app) }, { appMenu(app) }).also {
-            styleAppTile(it as Button)
-            icons.bind(it, app.packageName)
+            styleAppTile(it as Button, compact = section == "dock")
+            if (section != "dock") icons.bind(it, app.packageName)
         }
 
-    private fun styleAppTile(button: Button) {
-        button.minHeight = (104 * activity.resources.displayMetrics.density).toInt()
+    private fun styleAppTile(button: Button, compact: Boolean = false) {
+        button.minHeight = ui.dp(if (compact) 56 else 120)
+        button.textSize = if (compact) 14f else 16f
         button.maxLines = 2
         button.ellipsize = TextUtils.TruncateAt.END
     }
 
     private fun buildDock(ui: HomeUi) {
-        ui.heading("DOCK · Hold OK for pin / hide")
-        val pins = dockPackages
-        ui.row((0..5).map { slot ->
-            val pkg = pins.getOrNull(slot)
+        ui.heading("FAVORITES")
+        ui.row(DockPresentation.entries(dockPackages).map { entry ->
+            val pkg = entry.packageName
             if (pkg == null) {
-                ui.tile("slot:$slot", "+ Slot ${slot + 1}", { SettingsController(host).dockSlot(slot) })
-                    .also { styleAppTile(it as Button) }
+                ui.tile(entry.key, "+ Add favorite", { SettingsController(host).dockSlot(entry.slot) })
+                    .also { styleAppTile(it as Button, compact = true) }
             } else {
                 val app = dockApps.firstOrNull { it.packageName == pkg }
                 if (app != null) appTile(ui, app, "dock")
-                else ui.tile("dock:$pkg", pkg, {
-                    if (!discovery.launchPackage(pkg)) notice("App unavailable")
-                }, { appMenu(AppEntry(pkg, "", pkg)) }).also { styleAppTile(it as Button) }
+                else ui.tile(entry.key, "Unavailable · $pkg", {
+                    if (!discovery.launchPackage(pkg)) SettingsController(host).dockSlot(entry.slot)
+                }, { SettingsController(host).dockSlot(entry.slot) }).also {
+                    styleAppTile(it as Button, compact = true)
+                    it.contentDescription = "Unavailable app $pkg. Choose to replace or clear favorite."
+                }
             }
-        })
+        }, columns = 6)
     }
 
     private fun buildApps(ui: HomeUi) {
@@ -173,7 +176,7 @@ class HomeScreen(
             ui.root.addView(ui.text("No visible apps · Use Settings to show phone apps or unhide apps"))
         }
         visible.chunked(config.columns).forEach { row ->
-            ui.row(row.map { appTile(ui, it, "app") })
+            ui.row(row.map { appTile(ui, it, "app") }, columns = config.columns)
         }
     }
 
@@ -186,7 +189,7 @@ class HomeScreen(
     fun appMenu(app: AppEntry) {
         val pins = dockPackages
         val pinned = app.packageName in pins
-        AlertDialog.Builder(activity).setTitle(app.label)
+        HudDialogs.builder(activity, config).setTitle(app.label)
             .setItems(arrayOf(if (pinned) "Unpin from dock" else "Pin to dock", "Hide app")) { _, which ->
                 if (which == 0) {
                     val next = if (pinned) pins - app.packageName else DockPolicy.pin(pins, app.packageName)
@@ -202,7 +205,7 @@ class HomeScreen(
             return
         }
         val picker = CatalogPicker(inputs) { it.id }
-        AlertDialog.Builder(activity).setTitle("Inputs")
+        HudDialogs.builder(activity, config).setTitle("Inputs")
             .setItems(picker.choices.map { it.label }.toTypedArray()) { _, index ->
                 val selected = picker.resolve(index, discovery.inputs())
                 if (selected == null || !discovery.launchInput(selected.id)) notice("Input unavailable")
@@ -210,10 +213,10 @@ class HomeScreen(
     }
 
     fun missingOwnTv() {
-        AlertDialog.Builder(activity).setTitle("OwnTV unavailable")
+        HudDialogs.builder(activity, config).setTitle("OwnTV unavailable")
             .setMessage("${config.iptvPackage} is not installed or cannot launch. Open the project releases in your browser or choose an installed fork. No APK is downloaded automatically.")
             .setPositiveButton("Project releases") { _, _ ->
-                if (!discovery.launch(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Thedurancode/owntv/releases")))) {
+                if (!discovery.launch(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/ahXN00/OwnTV/releases")))) {
                     notice("No browser available")
                 }
             }.setNeutralButton("Choose installed app") { _, _ -> SettingsController(host).iptv() }

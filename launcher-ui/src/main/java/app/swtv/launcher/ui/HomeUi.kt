@@ -1,95 +1,81 @@
 package app.swtv.launcher.ui
 
-import android.animation.ValueAnimator
 import android.app.Activity
-import android.app.ActivityManager
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.swtv.theme.LauncherConfig
-import app.swtv.theme.ThemePolicy
-import java.time.ZonedDateTime
 
 class HomeUi(private val activity: Activity, val config: LauncherConfig) {
-    val light = ThemePolicy.lightTheme(config.theme, ZonedDateTime.now().hour)
-    val ink = if (light) Color.rgb(15, 28, 48) else Color.rgb(236, 244, 255)
-    val accent = Color.parseColor(mapOf(
-        "cyan" to "#48DDEB", "violet" to "#BA9CFF", "blue" to "#70ABFF",
-        "green" to "#64E6AE", "amber" to "#FFCC67", "rose" to "#FF96BF"
-    )[config.accent] ?: "#48DDEB")
+    val light = HudTokens.isLight(config)
+    val palette = HudTokens.palette(config)
+    val ink = palette.text
     val root = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(36, 24, 36, 24)
+        setPadding(dp(24), dp(16), dp(24), dp(24))
         clipChildren = false
         clipToPadding = false
     }
     private val controls = mutableListOf<Pair<String, View>>()
     private val rows = mutableListOf<List<View>>()
-    private val animate = ThemePolicy.effects(
-        config.reducedMotion,
-        (activity.getSystemService(Activity.ACTIVITY_SERVICE) as ActivityManager).isLowRamDevice,
-        ValueAnimator.areAnimatorsEnabled()
-    )
+    fun dp(value: Int) = HudTokens.dp(activity, value)
 
-    fun text(value: String, size: Float = 18f) = TextView(activity).apply {
+    fun text(value: String, size: Float = 16f) = TextView(activity).apply {
         text = value
         textSize = size
+        typeface = HudTokens.body
         setTextColor(ink)
-        setPadding(4, 6, 4, 6)
+        setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
-    fun heading(value: String) { root.addView(text(value, 18f)) }
+    fun heading(value: String) {
+        val line = LinearLayout(activity).apply {
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(8), dp(8), 0)
+        }
+        line.addView(View(activity).apply { setBackgroundColor(HudTokens.rail(config)) },
+            LinearLayout.LayoutParams(dp(3), dp(16)))
+        line.addView(text(value.uppercase(), 16f).apply {
+            typeface = HudTokens.heading
+            letterSpacing = .08f
+            setBackgroundColor(palette.background)
+        })
+        root.addView(line)
+    }
 
     fun tile(key: String, label: String, action: () -> Unit, longAction: (() -> Unit)? = null): View =
         Button(activity).apply {
             id = View.generateViewId()
             text = label
-            textSize = 16f
-            isAllCaps = false
-            setTextColor(ink)
             contentDescription = label
             isFocusable = true
-            setPadding(12, 12, 12, 12)
-            minHeight = 60
-            background = surface(false)
+            HudControls.button(this, config)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setOnClickListener { action() }
             longAction?.let { setOnLongClickListener { it(); true } }
-            setOnFocusChangeListener { view, focused ->
-                view.background = surface(focused)
-                if (animate) {
-                    view.animate().scaleX(if (focused) 1.04f else 1f)
-                        .scaleY(if (focused) 1.04f else 1f)
-                        .alpha(if (focused) 1f else .92f).setDuration(120).start()
-                }
-            }
             controls.add(key to this)
         }
 
-    private fun surface(focused: Boolean) = GradientDrawable(
-        GradientDrawable.Orientation.TL_BR,
-        if (light) intArrayOf(0xF0FFFFFF.toInt(), 0xE6DDE9F5.toInt())
-        else intArrayOf(0xE6293C59.toInt(), 0xDC15253C.toInt())
-    ).apply {
-        cornerRadius = 18f
-        setStroke(if (focused) 4 else 1,
-            if (focused) accent else if (light) 0xFF879BB2.toInt() else 0xFF49617C.toInt())
-    }
-
-    fun row(views: List<View>) {
+    /** Fixed column cells keep short dock/grid rows compact instead of stretching one app. */
+    fun row(views: List<View>, columns: Int = views.size) {
+        if (views.isEmpty()) return
         val line = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             isBaselineAligned = false
             clipChildren = false
             clipToPadding = false
-            // Room for the 1.04 focus scale, even at the first/last tile and toolbar edge.
-            setPadding(8, 6, 8, 6)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         views.forEach { view ->
             line.addView(view, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                setMargins(6, 5, 6, 5)
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            })
+        }
+        repeat((columns - views.size).coerceAtLeast(0)) {
+            line.addView(View(activity), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                setMargins(dp(4), 0, dp(4), 0)
             })
         }
         root.addView(line)

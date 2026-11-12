@@ -15,6 +15,8 @@ import app.swtv.theme.LauncherConfig
 import app.swtv.theme.Preferences
 import app.swtv.theme.ThemePolicy
 import app.swtv.launcher.runtime.*
+import app.swtv.launcher.ui.HudDialogs
+import app.swtv.launcher.ui.DockPresentation
 import app.swtv.launcher.ui.LauncherHost
 import app.swtv.launcher.ui.HomeScreen
 import app.swtv.launcher.ui.HomeScreenActions
@@ -39,10 +41,7 @@ class MainActivity : Activity(), LauncherHost {
     override var apps = emptyList<AppEntry>()
         private set
     private var dockApps = emptyList<AppEntry>()
-    private var dockCatalogReady = false
-    override val dockPackages: List<String> get() = DockPolicy.canonical(
-        config.dock, if (dockCatalogReady) dockApps.map { it.packageName }.toSet() else null
-    )
+    override val dockPackages: List<String> get() = DockPresentation.pins(config.dock)
     override var inputs = emptyList<InputEntry>()
         private set
     private lateinit var weather: Weather
@@ -200,7 +199,6 @@ class MainActivity : Activity(), LauncherHost {
     private fun refreshCatalog() {
         val snapshot = discovery.appSnapshot(true) ?: return
         dockApps = snapshot
-        dockCatalogReady = true
         // Read-only refresh never rewrites pins: updates can temporarily remove an app.
         // Every dock edit commits the same effective sequence used to draw these slots.
         // The phone-app setting filters the grid only: existing phone-app pins remain usable.
@@ -216,7 +214,7 @@ class MainActivity : Activity(), LauncherHost {
     }
 
     override fun notice(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).show()
+        HudDialogs.builder(this, config).setTitle(title).setMessage(message).setPositiveButton("OK", null).show()
     }
 
     private fun openTvHub() {
@@ -237,13 +235,13 @@ class MainActivity : Activity(), LauncherHost {
     fun showUpdatePanel(engine: UpdateEngine?) {
         if (!foreground) return
         updatePanel?.close()
-        updatePanel = UpdatePanel(this, engine) { updatePanel = null }.also { it.show() }
+        updatePanel = UpdatePanel(this, engine, config) { updatePanel = null }.also { it.show() }
     }
 
     override fun showDiagnostics() {
         if (!foreground) return
         diagnosticsDialog?.dismiss()
-        val dialog = AlertDialog.Builder(this).setTitle("Diagnostics")
+        val dialog = HudDialogs.builder(this, config).setTitle("Diagnostics")
             .setMessage("Collecting public system values…").setPositiveButton("OK", null).create()
         diagnosticsDialog = dialog
         dialog.setOnDismissListener {
@@ -266,7 +264,7 @@ class MainActivity : Activity(), LauncherHost {
                 .addCategory(Intent.CATEGORY_OPENABLE).setType("image/*")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION), 41)
         } catch (_: Exception) {
-            notice("Image picker unavailable", "Use the built-in time-based gradient on this device.")
+            notice("Image picker unavailable", "Use the built-in HUD background on this device.")
         }
     }
 

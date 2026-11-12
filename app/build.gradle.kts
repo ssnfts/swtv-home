@@ -1,7 +1,7 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
-val releaseVersion = providers.gradleProperty("swtvVersionName").orElse("0.3.0").get()
+val releaseVersion = providers.gradleProperty("swtvVersionName").orElse("0.4.0").get()
 require(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)").matches(releaseVersion)) { "swtvVersionName must have three canonical numeric segments" }
-val releaseCodeText = providers.gradleProperty("swtvVersionCode").orElse("3").get()
+val releaseCodeText = providers.gradleProperty("swtvVersionCode").orElse("4").get()
 val releaseCode = releaseCodeText.toIntOrNull()
 require(releaseCode != null && releaseCode > 0 && releaseCode.toString() == releaseCodeText) { "swtvVersionCode must be a canonical positive Int" }
 val updateFeed = providers.gradleProperty("swtvUpdateFeed").orNull

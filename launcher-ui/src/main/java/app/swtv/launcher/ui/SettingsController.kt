@@ -1,6 +1,5 @@
 package app.swtv.launcher.ui
 
-import android.app.AlertDialog
 import android.widget.EditText
 import app.swtv.discovery.CatalogRules
 import app.swtv.theme.LauncherConfig
@@ -35,7 +34,7 @@ class SettingsController(private val host: LauncherHost) {
                 8 -> wallpaper()
                 9 -> weather()
                 10 -> iptv()
-                11 -> AlertDialog.Builder(activity).setTitle("Reset all local configuration?")
+                11 -> HudDialogs.builder(activity, config).setTitle("Reset all local configuration?")
                     .setPositiveButton("Reset") { _, _ -> host.save(LauncherConfig()) }
                     .setNegativeButton("Cancel", null).show()
             }
@@ -47,7 +46,7 @@ class SettingsController(private val host: LauncherHost) {
             host.notice(title, "No available choices on this device.")
             return
         }
-        AlertDialog.Builder(activity).setTitle(title).setItems(items.toTypedArray()) { _, index ->
+        HudDialogs.builder(activity, config).setTitle(title).setItems(items.toTypedArray()) { _, index ->
             choose(index)
         }.setNegativeButton("Cancel", null).show()
     }
@@ -58,7 +57,7 @@ class SettingsController(private val host: LauncherHost) {
             isSingleLine = true
             selectAll()
         }
-        AlertDialog.Builder(activity).setTitle(title).setView(field)
+        HudDialogs.builder(activity, config).setTitle(title).setView(field)
             .setPositiveButton("Save") { _, _ -> done(field.text.toString().trim()) }
             .setNegativeButton("Cancel", null).show()
         field.requestFocus()
@@ -201,7 +200,7 @@ class SettingsController(private val host: LauncherHost) {
     }
 
     private fun wallpaper() {
-        options("Wallpaper", listOf("Built-in time gradient", "Choose image")) {
+        options("Wallpaper", listOf("Built-in HUD background", "Choose image")) {
             if (it == 0) host.save(config.copy(wallpaperUri = "")) else host.pickWallpaper()
         }
     }

@@ -1,5 +1,6 @@
 package app.swtv.launcher.runtime
 
+import app.swtv.launcher.ui.HudTokens
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit
 /** One running decode, at most 48 queued packages, and weak current-screen UI bindings. */
 class Icons(context: Context) {
     private val appContext = context.applicationContext
+    private val iconPixels = HudTokens.dp(appContext, HudTokens.iconDp).coerceAtMost(144)
     private val cache = LruCache<String, Bitmap>(48)
     private val executor = ThreadPoolExecutor(
         1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(48)
@@ -71,8 +73,8 @@ class Icons(context: Context) {
         if (!work.isCurrent(ticket)) return
         val image = try {
             val icon = appContext.packageManager.getApplicationIcon(ticket.packageName)
-            Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).also {
-                icon.setBounds(0, 0, 64, 64)
+            Bitmap.createBitmap(iconPixels, iconPixels, Bitmap.Config.ARGB_8888).also {
+                icon.setBounds(0, 0, iconPixels, iconPixels)
                 icon.draw(Canvas(it))
             }
         } catch (_: Exception) { null }
@@ -91,10 +93,10 @@ class Icons(context: Context) {
 
     private fun apply(button: Button, image: Bitmap) {
         val drawable = BitmapDrawable(appContext.resources, image)
-        val size = (40 * appContext.resources.displayMetrics.density).toInt()
+        val size = HudTokens.dp(appContext, HudTokens.iconDp)
         drawable.setBounds(0, 0, size, size)
         button.setCompoundDrawables(null, drawable, null, null)
-        button.compoundDrawablePadding = 8
+        button.compoundDrawablePadding = HudTokens.dp(appContext, 8)
     }
 
     fun close() {
