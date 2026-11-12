@@ -20,6 +20,9 @@ import app.swtv.launcher.ui.DockPresentation
 import app.swtv.launcher.ui.LauncherHost
 import app.swtv.launcher.ui.HomeScreen
 import app.swtv.launcher.ui.HomeScreenActions
+import app.swtv.launcher.ui.WebTile
+import app.swtv.launcher.ui.WebTileActions
+import app.swtv.home.web.*
 import app.swtv.diagnostics.DeviceDiagnostics
 import app.swtv.diagnostics.DiagnosticReport
 import app.swtv.diagnostics.DiagnosticSnapshot
@@ -56,6 +59,10 @@ class MainActivity : Activity(), LauncherHost {
     private var savedFocus: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var foreground = false
+    private lateinit var websiteWork: WebsiteWork
+    private var websiteEditor: WebsiteEditor? = null
+    private var websites = emptyList<WebsiteFavorite>()
+    private var websiteRequest = 0L
     private var packageReceiverRegistered = false
     private var timeReceiverRegistered = false
 
@@ -88,6 +95,7 @@ class MainActivity : Activity(), LauncherHost {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         prefs = Preferences(this)
+        websiteWork = WebsiteWork(applicationContext)
         config = prefs.load()
         weather = Weather(this)
         wallpaper = Wallpaper(this)
@@ -105,11 +113,15 @@ class MainActivity : Activity(), LauncherHost {
         updatePanel?.foreground(true)
         registerForegroundReceivers()
         refresh()
+        refreshWebsites()
     }
 
     override fun onPause() {
         savedFocus = home?.focusedKey() ?: savedFocus
         foreground = false
+        ++websiteRequest
+        websiteEditor?.dismiss()
+        websiteWork.detach()
         updatePanel?.foreground(false)
         handler.removeCallbacks(minuteTick)
         handler.removeCallbacks(themeBoundary)
@@ -125,6 +137,7 @@ class MainActivity : Activity(), LauncherHost {
     }
 
     override fun onDestroy() {
+        websiteWork.close()
         updatePanel?.close()
         icons.close()
         wallpaper.close()
@@ -188,12 +201,48 @@ class MainActivity : Activity(), LauncherHost {
         refreshCatalog()
         inputs = discovery.inputs()
         val screen = HomeScreen(this, dockApps, icons, wallpaper, weather,
-            HomeScreenActions(about = { about() }, openTvHub = { openTvHub() }))
+            HomeScreenActions(about = { about() }, openTvHub = { openTvHub() }),
+            websites.map { WebTile(it.id, it.title, it.displayHost) },
+            WebTileActions(open = { openWebsite(it) }, edit = { editWebsite(it) }, add = { addWebsite() }))
         home = screen
         screen.render(savedFocus)
         handler.removeCallbacks(minuteTick)
         minuteTick.run()
         scheduleThemeBoundary()
+    }
+
+    private fun refreshWebsites() {
+        val token = ++websiteRequest
+        websiteWork.submit(WebsiteWork.Command.Snapshot) { result ->
+            if (!foreground || token != websiteRequest) return@submit
+            if (result is WebsiteResult.Success) {
+                val next = result.favorites.entries
+                if (next != websites) { websites = next; refresh() }
+            } else if (result is WebsiteResult.Failure) notice("Websites unavailable", WebsiteEditor.message(result.error))
+        }
+    }
+    private fun addWebsite() {
+        websiteEditor?.dismiss()
+        websiteEditor = WebsiteEditor(this, config, websiteWork).also { it.edit(finished = { refreshWebsites() }) }
+    }
+    private fun openWebsite(id: String) {
+        websiteWork.submit(WebsiteWork.Command.Snapshot) { result ->
+            if (!foreground) return@submit
+            if (result is WebsiteResult.Success && result.favorites.entries.any { it.id == id })
+                startActivity(WebActivity.intent(this, id))
+            else notice("Website unavailable", if (result is WebsiteResult.Failure) WebsiteEditor.message(result.error) else "This website was removed.")
+        }
+    }
+    private fun editWebsite(id: String) {
+        websiteWork.submit(WebsiteWork.Command.Snapshot) { result ->
+            if (!foreground) return@submit
+            val favorite = (result as? WebsiteResult.Success)?.favorites?.entries?.firstOrNull { it.id == id }
+            if (favorite == null) notice("Website unavailable", if (result is WebsiteResult.Failure) WebsiteEditor.message(result.error) else "This website was removed.")
+            else {
+                websiteEditor?.dismiss()
+                websiteEditor = WebsiteEditor(this, config, websiteWork).also { it.menu(favorite) { refreshWebsites() } }
+            }
+        }
     }
 
     private fun refreshCatalog() {

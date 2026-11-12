@@ -28,7 +28,9 @@ class HomeScreen(
     private val icons: Icons,
     private val wallpaper: Wallpaper,
     private val weather: Weather,
-    private val actions: HomeScreenActions
+    private val actions: HomeScreenActions,
+    private val websites: List<WebTile> = emptyList(),
+    private val webActions: WebTileActions? = null
 ) {
     private val activity get() = host.activity
     private val config get() = host.config
@@ -48,6 +50,7 @@ class HomeScreen(
         buildWatchShortcuts(ui)
         buildModules(ui)
         buildDock(ui)
+        buildWebsites(ui)
         buildApps(ui)
         ui.root.addView(ui.text("Hold OK on apps for pin / hide. Hold OK on custom modules to edit.", 13f).apply {
             setTextColor(ui.palette.secondary)
@@ -180,6 +183,17 @@ class HomeScreen(
         visible.chunked(config.columns).forEach { row ->
             ui.row(row.map { appTile(ui, it, "app") }, columns = config.columns)
         }
+    }
+
+    private fun buildWebsites(ui: HomeUi) {
+        val callbacks = webActions ?: return
+        ui.heading("Web apps")
+        val tiles = websites.map { site ->
+            ui.tile(site.key, "${site.title}\n${site.host}", { callbacks.open(site.id) }, { callbacks.edit(site.id) }).apply {
+                contentDescription = "${site.title}, ${site.host}. Hold OK to edit website."
+            }
+        } + ui.tile("web-add", "+ Add website", callbacks.add)
+        tiles.chunked(config.columns).forEach { ui.row(it, config.columns) }
     }
 
     private fun launch(app: AppEntry) {
