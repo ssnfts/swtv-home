@@ -173,7 +173,9 @@ class HomeScreen(
         ui.heading("Apps")
         val visible = CatalogRules.visible(apps, config.hidden)
         if (visible.isEmpty()) {
-            ui.root.addView(ui.text("No visible apps · Use Settings to show phone apps or unhide apps"))
+            ui.root.addView(ui.text("No visible apps · Use Settings to show phone apps or unhide apps").apply {
+                setBackgroundColor(ui.palette.background)
+            })
         }
         visible.chunked(config.columns).forEach { row ->
             ui.row(row.map { appTile(ui, it, "app") }, columns = config.columns)
