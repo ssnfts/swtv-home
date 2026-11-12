@@ -98,10 +98,12 @@ without weakening their nonphysical serial and API 29 guards.
 - [ ] Push reviewed source and dispatch established hosted unsigned release build
   with the existing public feed and certificate. Verify the run and downloaded
   input hashes, then sign locally using the existing protected identity.
-- [ ] After visual acceptance and an available authorized physical ADB connection,
-  update the TV in place, select Dark through SWTV appearance, verify OwnTV/HDMI and
-  stock HOME. Never change HOME. Keep emulator and physical results separate.
+- [ ] After visual acceptance, deliver the signed release through the installed
+  production app's HTTPS update flow and Android confirmation. Ask the user to
+  select Dark through SWTV appearance and verify OwnTV/HDMI and stock HOME. Keep
+  emulator and user-reported physical results separate. Use identity-checked ADB
+  only if troubleshooting requires a new authorized connection. Never change HOME.
 - [ ] Publish the reviewed version through the existing release process and verify
-  manifest, asset hashes and current-app feed check. Close network ADB again after
-  physical validation. If transport or user feedback is pending, report the exact
+  manifest, asset hashes and current-app feed check. Keep network ADB closed during
+  OTA validation, or close it again if troubleshooting reopened it. If transport or user feedback is pending, report the exact
   completed deliverables and remaining step without claiming physical acceptance.

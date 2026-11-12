@@ -108,8 +108,10 @@ code-4 update. Exercise the live feed on the accepted signed build.
 Run existing module boundaries, relevant JVM tests, assembly and lint. Add focused
 coverage for any changed dock/focus policy rather than snapshotting every colour.
 Record emulator and physical results separately; physical held OK and HDMI require
-the TV. Network ADB was closed after the previous deployment, so TV installation
-will require re-establishing it physically. Close it again after validation.
+the TV. Network ADB was closed after the previous deployment. Prefer the already configured
+production app's About update flow for user-confirmed physical installation over
+HTTPS. Re-establish ADB only if troubleshooting requires it, and close it again
+after validation. Never assume TCP ADB is enabled.
 
 ## Approval
 
