@@ -43,6 +43,42 @@ The Diagnostics control collects an on-demand snapshot of public device/build, d
 
 No accessibility remapper, root access, boot receiver, persistent background service, system settings writes or package-disable functionality belongs to this project. System Settings and browser links open only after user action.
 
+## Getting the best result
+
+- **Install it as an ordinary app and keep the stock launcher as default**
+  until you have tested remote navigation, app launching and HDMI switching
+  on your own TV.
+- **Choose Settings → Theme → Dark** for the full Cyberpunk HUD look.
+- **Pin only what you use.** A short dock is faster to navigate with a
+  remote than a full one; hide the rest with long-press OK.
+- **Set the app-grid columns for your viewing distance.** Fewer columns
+  give larger tiles.
+- **Turn motion down on slow hardware.** The launcher follows the
+  reduced-motion setting.
+- **Use HTTPS addresses for website tiles.** Only HTTPS addresses are
+  accepted.
+- **Leave weather off unless you want it.** It needs a location you type in
+  and makes network requests only when enabled.
+
+## Works well with
+
+**Graphic design.** The wallpaper and theme settings make the TV a branded
+surface: design a wallpaper at the TV's resolution in Photoshop, Affinity
+or Figma and set it in Settings.
+
+**Product visualization.** A website tile opens any HTTPS page full screen,
+so a web-based 3D product viewer, a turntable page or a portfolio site
+becomes a one-press showroom or studio display.
+
+**Film.** Use a website tile for a review or dailies page, or pin a media
+player app, to turn a TV into a quick screening monitor for a team.
+
+**Automation.** The `scripts/` folder has emulator smoke, upgrade and
+release checks in Python, and the GitHub Actions workflows build and check
+every change. The TV Hub contract in
+[docs/TV_HUB_INTERFACE.md](docs/TV_HUB_INTERFACE.md) defines how a separate
+provider app can plug in.
+
 ## Modules
 
 The six Android libraries own launcher UI, theme configuration, installed-app discovery, read-only diagnostics, update logic and the TV Hub contract. The application composes them and owns the Android installer integration. See [architecture](docs/ARCHITECTURE.md) for dependency rules. The `home` preference file, `config` key and schema1 retain compatibility with earlier development builds.
